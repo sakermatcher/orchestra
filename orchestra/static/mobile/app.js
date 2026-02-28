@@ -20,9 +20,17 @@ const State = {
   session: null,              // full session snapshot
   activeBlock: null,          // current block:activate payload
   activateEpoch: null,        // ms since epoch when block started
-  blockDuration: null,        // seconds
+  blockDuration: null,        // effective duration seconds (incl. budget surplus)
   endCondition: null,         // "time"|"click"|"either"
   totalDurationSeconds: null,
+
+  // Slide navigation within the active block
+  slideStart: null,           // first slide of current block
+  slideEnd: null,             // last slide of current block
+  currentSlide: null,         // slide we are currently on
+
+  // Budget tracking
+  sessionBudgetSeconds: 0,    // accumulated surplus(+) / deficit(-) in seconds
 
   sessionState: "idle",       // warmup|running|paused|completed|aborted
   isActive: false,            // am I the current presenter?
@@ -69,24 +77,29 @@ const socket = io({
 });
 
 // ---------------------------------------------------------------------------
-// Reconnect banner
+// Reconnect banner + global connect/disconnect
 // ---------------------------------------------------------------------------
-socket.on("connect", () => {
-  $("reconnectBanner").classList.remove("show");
+socket.on("disconnect", () => {
+  const b = $("reconnectBanner");
+  if (b) b.classList.add("show");
+});
 
-  // Re-join if we had a session going
+socket.on("connect", () => {
+  const b = $("reconnectBanner");
+  if (b) b.classList.remove("show");
+
+  // Re-join if we already had a session identity stored
   const savedId = sessionStorage.getItem("orchestra_presenter_id");
   const savedState = sessionStorage.getItem("orchestra_session_state");
-  if (savedId && savedState !== "idle") {
+  // On the presenter page we always rejoin (page was loaded because we got
+  // session:started).  On the join page only rejoin if session was active.
+  const shouldRejoin = savedId && (isPresenterPage || savedState !== "idle");
+  if (shouldRejoin) {
     socket.emit("presenter:join", {
       presenter_id: savedId,
       display_name: sessionStorage.getItem("orchestra_presenter_name") || "",
     });
   }
-});
-
-socket.on("disconnect", () => {
-  $("reconnectBanner").classList.add("show");
 });
 
 // ---------------------------------------------------------------------------
@@ -212,6 +225,14 @@ function initPresenterPage() {
   // Request vibration permission
   requestVibrationPermission();
 
+  // Safety timer: if still on the waiting screen after 8 s, something went
+  // wrong — send back to join so the presenter can re-select.
+  const _safetyTimer = setTimeout(() => {
+    const waiting = $("screenWaiting");
+    const stuckOnWaiting = waiting && waiting.classList.contains("active");
+    if (stuckOnWaiting) window.location.href = "/join";
+  }, 8000);
+
   // Rejoin on connect (handles initial load and reconnects)
   socket.on("connect", () => {
     socket.emit("presenter:join", {
@@ -221,6 +242,7 @@ function initPresenterPage() {
   });
 
   socket.on("presenter:join_ok", ({ presenter_id, name, color, session_snapshot }) => {
+    clearTimeout(_safetyTimer);
     State.myId = presenter_id;
     State.myName = name;
     State.myColor = color;
@@ -235,6 +257,11 @@ function initPresenterPage() {
   socket.on("presenter:join_error", ({ code }) => {
     if (code === "no_active_session") {
       window.location.href = "/join";
+    } else if (code === "unknown_presenter_id") {
+      // Stale sessionStorage from a previous session with a different timeline.
+      sessionStorage.removeItem("orchestra_presenter_id");
+      sessionStorage.removeItem("orchestra_presenter_name");
+      window.location.href = "/join";
     }
   });
 
@@ -243,11 +270,11 @@ function initPresenterPage() {
     handleBlockActivate(payload);
   });
 
-  socket.on("block:completed", (payload) => {
-    // Will be superseded by the next block:activate or session:completed
+  socket.on("block:completed", () => {
+    // Superseded by the next block:activate or session:completed
   });
 
-  socket.on("block:overrun", (payload) => {
+  socket.on("block:overrun", () => {
     if (State.isActive) {
       // Flash the countdown red briefly
       const cd = $("countdownDisplay");
@@ -255,6 +282,18 @@ function initPresenterPage() {
         cd.style.color = "#e85454";
         setTimeout(() => { cd.style.color = ""; }, 500);
       }
+    }
+  });
+
+  // Slide navigation confirmation from server
+  socket.on("slide:goto", ({ slide_number, reason }) => {
+    State.currentSlide = slide_number;
+    updateSlideButtonLabels();
+    const slideInfo = $("slideInfo");
+    if (slideInfo && State.isActive) {
+      const blockSlides = State.slideEnd - State.slideStart + 1;
+      const slideInBlock = State.currentSlide - State.slideStart + 1;
+      slideInfo.textContent = `Slide ${slideInBlock} of ${blockSlides}`;
     }
   });
 
@@ -307,27 +346,71 @@ function initPresenterPage() {
     if (el) el.textContent = "Session was ended by the operator.";
   });
 
-  // Advance button
-  const advBtn = $("advanceBtn");
-  if (advBtn) {
-    advBtn.addEventListener("click", () => {
-      if (!State.activeBlock || !State.isActive) return;
-      advBtn.disabled = true;
-      advBtn.textContent = "Advancing…";
-      socket.emit("presenter:request_advance", {
-        presenter_id: State.myId,
-        block_id: State.activeBlock.block_id,
-        request_epoch: Date.now() / 1000,
-      });
+  // ---------------------------------------------------------------------------
+  // Slide navigation buttons
+  // ---------------------------------------------------------------------------
+  const prevBtn = $("prevSlideBtn");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (!State.isActive || !State.activeBlock) return;
+      if (State.currentSlide > State.slideStart) {
+        // Navigate to previous slide within the block
+        State.currentSlide--;
+        socket.emit("presenter:goto_slide", {
+          presenter_id: State.myId,
+          slide_number: State.currentSlide,
+        });
+        updateSlideButtonLabels();
+      } else {
+        // Already at the first slide of this block — go back to previous block
+        prevBtn.disabled = true;
+        socket.emit("presenter:request_prev_block", {
+          presenter_id: State.myId,
+          block_id: State.activeBlock.block_id,
+        });
+      }
+    });
+  }
+
+  const nextBtn = $("nextSlideBtn");
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (!State.isActive || !State.activeBlock) return;
+      if (State.currentSlide < State.slideEnd) {
+        // Navigate to next slide within the block
+        State.currentSlide++;
+        socket.emit("presenter:goto_slide", {
+          presenter_id: State.myId,
+          slide_number: State.currentSlide,
+        });
+        updateSlideButtonLabels();
+      } else {
+        // Already at the last slide — advance the block (if click is allowed)
+        const canClick = ["click", "either"].includes(State.endCondition);
+        if (canClick) {
+          nextBtn.disabled = true;
+          nextBtn.textContent = "Advancing…";
+          socket.emit("presenter:request_advance", {
+            presenter_id: State.myId,
+            block_id: State.activeBlock.block_id,
+            request_epoch: Date.now() / 1000,
+          });
+        }
+      }
     });
   }
 
   socket.on("presenter:advance_rejected", () => {
-    const advBtn = $("advanceBtn");
-    if (advBtn) {
-      advBtn.disabled = false;
-      advBtn.textContent = "Done — Next Section";
+    const nb = $("nextSlideBtn");
+    if (nb && State.isActive) {
+      nb.disabled = false;
+      updateSlideButtonLabels();
     }
+  });
+
+  socket.on("presenter:prev_block_rejected", () => {
+    const pb = $("prevSlideBtn");
+    if (pb) pb.disabled = false;
   });
 }
 
@@ -351,6 +434,15 @@ function applySessionSnapshot(snapshot) {
     return;
   }
 
+  // During warmup the server snapshot already has current_block = blocks[0],
+  // but activate_epoch is 0 (block not yet started).  Never show the active
+  // screen prematurely — just show the waiting spinner until block:activate
+  // arrives with the real epoch when GO is pressed.
+  if (snapshot.state === "warmup") {
+    showScreen("screenWaiting");
+    return;
+  }
+
   if (snapshot.current_block) {
     const b = snapshot.current_block;
     const isMyBlock = b.presenter_id === State.myId;
@@ -368,6 +460,8 @@ function applySessionSnapshot(snapshot) {
         slide_start: b.slide_start,
         slide_end: b.slide_end,
         duration_seconds: b.duration,
+        effective_duration_seconds: snapshot.effective_duration_seconds || b.duration,
+        session_budget_seconds: snapshot.session_budget_seconds || 0,
         end_condition: b.end_condition,
         overrun_behavior: b.overrun_behavior,
         activate_epoch: snapshot.activate_epoch,
@@ -390,9 +484,16 @@ function applySessionSnapshot(snapshot) {
 function handleBlockActivate(payload) {
   State.activeBlock = payload;
   State.activateEpoch = payload.activate_epoch * 1000;  // convert to ms
-  State.blockDuration = payload.duration_seconds;
+  // Use effective_duration for the countdown so budget surplus is visible
+  State.blockDuration = payload.effective_duration_seconds || payload.duration_seconds;
   State.endCondition = payload.end_condition;
   State.isActive = payload.presenter_id === State.myId;
+
+  // Slide tracking
+  State.slideStart = payload.slide_start ?? null;
+  State.slideEnd = payload.slide_end ?? null;
+  State.currentSlide = payload.slide_start ?? null;
+  State.sessionBudgetSeconds = payload.session_budget_seconds || 0;
 
   clearCountdown();
 
@@ -415,10 +516,6 @@ function showActiveScreen(payload) {
   const badge = $("blockBadge");
   if (badge) badge.textContent = `Block ${payload.block_index + 1} of ${payload.total_blocks}`;
 
-  // Slide info
-  const slideInfo = $("slideInfo");
-  if (slideInfo) slideInfo.textContent = `Slides ${payload.slide_start}–${payload.slide_end}`;
-
   // Notes
   const notesBox = $("notesBox");
   if (notesBox) {
@@ -431,14 +528,14 @@ function showActiveScreen(payload) {
     }
   }
 
-  // Advance button
-  const advBtn = $("advanceBtn");
-  if (advBtn) {
-    const canClick = ["click", "either"].includes(payload.end_condition);
-    advBtn.classList.toggle("visible", canClick);
-    advBtn.disabled = false;
-    advBtn.textContent = "Done — Next Section";
-  }
+  // Re-enable nav buttons
+  const prevBtn = $("prevSlideBtn");
+  const nextBtn = $("nextSlideBtn");
+  if (prevBtn) prevBtn.disabled = false;
+  if (nextBtn) nextBtn.disabled = false;
+
+  // Update slide info and button labels
+  updateSlideButtonLabels();
 
   startCountdown();
 }
@@ -467,7 +564,7 @@ function showInactiveScreen(snapshot, currentBlockPayload) {
     const summary = State.session.blocks_summary || [];
     const myBlocks = summary.filter(b => b.presenter_id === State.myId);
     const currentIdx = State.session.current_block_index || 0;
-    const nextMyBlock = myBlocks.find((b, _, arr) => {
+    const nextMyBlock = myBlocks.find((b) => {
       const blockIdx = summary.findIndex(s => s.block_id === b.block_id);
       return blockIdx > currentIdx;
     });
@@ -478,6 +575,42 @@ function showInactiveScreen(snapshot, currentBlockPayload) {
     } else {
       upNext.textContent = "You have no more blocks — sit back and enjoy.";
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Slide navigation helpers
+// ---------------------------------------------------------------------------
+function updateSlideButtonLabels() {
+  if (!State.isActive || State.slideStart === null || State.slideEnd === null) return;
+
+  const prevBtn = $("prevSlideBtn");
+  const nextBtn = $("nextSlideBtn");
+  const slideInfo = $("slideInfo");
+
+  const atFirst = State.currentSlide <= State.slideStart;
+  const atLast  = State.currentSlide >= State.slideEnd;
+  const canClickAdvance = ["click", "either"].includes(State.endCondition);
+
+  if (prevBtn && !prevBtn.disabled) {
+    prevBtn.textContent = atFirst ? "← Prev Block" : "← Prev";
+  }
+
+  if (nextBtn && !nextBtn.disabled) {
+    if (atLast && canClickAdvance) {
+      nextBtn.textContent = "Done →";
+    } else if (atLast && !canClickAdvance) {
+      nextBtn.textContent = "Next →";
+      nextBtn.disabled = true;  // can't advance past last slide on a time-only block
+    } else {
+      nextBtn.textContent = "Next →";
+    }
+  }
+
+  if (slideInfo) {
+    const blockSlides = State.slideEnd - State.slideStart + 1;
+    const slideInBlock = State.currentSlide - State.slideStart + 1;
+    slideInfo.textContent = `Slide ${slideInBlock} of ${blockSlides}`;
   }
 }
 
@@ -510,6 +643,21 @@ function updateCountdownDisplay() {
   if (sesEl && State.sessionStartEpoch) {
     const sesElapsed = Math.max(0, (Date.now() - State.sessionStartEpoch) / 1000);
     sesEl.textContent = `${formatSeconds(sesElapsed)} total elapsed`;
+  }
+
+  // Budget indicator: (+MM:SS) surplus / (-MM:SS) deficit
+  const budgetEl = $("budgetDisplay");
+  if (budgetEl) {
+    const budget = State.sessionBudgetSeconds;
+    if (Math.abs(budget) >= 1) {
+      const sign = budget >= 0 ? "+" : "-";
+      const abs = Math.abs(budget);
+      budgetEl.textContent = `(${sign}${formatSeconds(abs)})`;
+      budgetEl.classList.toggle("surplus", budget > 0);
+      budgetEl.classList.toggle("deficit", budget < 0);
+    } else {
+      budgetEl.classList.remove("surplus", "deficit");
+    }
   }
 
   // Color transitions

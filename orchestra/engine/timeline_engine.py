@@ -57,6 +57,14 @@ class TimelineEngine:
         self._vib_scheduler: Optional[VibrationScheduler] = None
         self._lock = _Lock(1)
 
+        # Budget tracking: running balance of time saved (positive) or lost
+        # (negative) across all completed blocks.  Positive budget is added to
+        # the next block's effective timer duration.
+        self._session_budget: float = 0.0
+        # Effective duration used for the currently active block (may exceed
+        # block.duration when surplus budget has accumulated).
+        self._current_effective_duration: float = 0.0
+
     # ------------------------------------------------------------------
     # Dependency injection
     # ------------------------------------------------------------------
@@ -125,6 +133,8 @@ class TimelineEngine:
 
         self._session = ActiveSession.create(self._timeline)
         self._vib_scheduler = VibrationScheduler(self._socketio, self._config)
+        self._session_budget = 0.0
+        self._current_effective_duration = 0.0
         self._transition(EngineState.WARMUP)
 
         # Emit session:warmup to all connected clients
@@ -145,12 +155,25 @@ class TimelineEngine:
             return
         # Open PowerPoint
         self._com_open_presentation()
-        # Start the clock
+        # Signal session start to all clients
         self._emit("session:started", {
             "session_id": self._session.id,
             "start_epoch": time.time(),
         }, room="session:all")
-        self._activate_block(0)
+
+        delay = self._config.get("presentation_start_delay_seconds", 3)
+        if delay > 0 and _USE_EVENTLET:
+            import eventlet as _ev
+            try:
+                from orchestra.server.flask_app import get_relay_queue
+                def _do_with_delay():
+                    _ev.spawn(lambda: [_ev.sleep(delay), self._activate_block(0)])
+                get_relay_queue().put(_do_with_delay)
+            except Exception:
+                # Flask server not running (tests / early boot) — activate immediately
+                self._activate_block(0)
+        else:
+            self._activate_block(0)
 
     def toggle_pause(self) -> None:
         if self._state == EngineState.RUNNING:
@@ -217,6 +240,77 @@ class TimelineEngine:
         self._complete_current_block("presenter_advance")
         return True
 
+    def handle_presenter_goto_slide(self, data: dict) -> bool:
+        """
+        A presenter requests to navigate to a specific slide within their block.
+        Returns True if accepted.
+        """
+        if self._state != EngineState.RUNNING:
+            return False
+        if not self._session:
+            return False
+
+        block = self._session.current_block
+        if block is None:
+            return False
+
+        presenter_id = data.get("presenter_id")
+        if block.presenter_id != presenter_id:
+            return False
+
+        slide_number = data.get("slide_number")
+        if slide_number is None:
+            return False
+
+        # Clamp to block's slide range
+        slide_number = max(block.slide_start, min(block.slide_end, int(slide_number)))
+        self._com_goto_slide(slide_number)
+        # Confirm navigation back to the requesting presenter
+        self._emit("slide:goto", {
+            "slide_number": slide_number,
+            "block_id": block.id,
+            "reason": "presenter_navigation",
+        }, room=f"presenter:{presenter_id}")
+        return True
+
+    def handle_presenter_prev_block(self, data: dict) -> bool:
+        """
+        A presenter requests to go back to the previous block.
+        The previous block is started with accumulated surplus as its remaining time.
+        Returns True if accepted.
+        """
+        if self._state != EngineState.RUNNING:
+            return False
+        if not self._session:
+            return False
+
+        current_idx = self._session.current_block_index
+        if current_idx == 0:
+            return False  # already at the first block
+
+        block = self._session.current_block
+        if block is None:
+            return False
+
+        presenter_id = data.get("presenter_id")
+        if block.presenter_id != presenter_id:
+            return False
+
+        # End the current block without updating budget (no time was "spent"
+        # on it from budget perspective — presenter is going back)
+        self._transition(EngineState.BLOCK_TRANSITION)
+        self._stop_block_runner()
+        self._emit("block:completed", {
+            "block_id": block.id,
+            "completion_reason": "presenter_prev_block",
+        }, room="session:all")
+
+        # Give the previous block the accumulated budget as its effective duration
+        # (minimum 30 seconds so the presenter has some time to work with).
+        override_eff = max(30.0, self._session_budget) if self._session_budget > 0 else 30.0
+        self._activate_block(current_idx - 1, override_effective_duration=override_eff)
+        return True
+
     # ------------------------------------------------------------------
     # Session snapshot (for /api/session and WebSocket state_sync)
     # ------------------------------------------------------------------
@@ -247,6 +341,8 @@ class TimelineEngine:
             "block_elapsed_seconds": block_elapsed,
             "block_remaining_seconds": max(0.0, block_remaining),
             "current_block": block.to_dict() if block else None,
+            "session_budget_seconds": self._session_budget,
+            "effective_duration_seconds": self._current_effective_duration,
             "blocks_summary": [
                 {
                     "block_id": b.id,
@@ -275,7 +371,8 @@ class TimelineEngine:
             self._bridge.post("session:state_changed", new_state.value)
         print(f"[Engine] {old.value} → {new_state.value}")
 
-    def _activate_block(self, block_index: int) -> None:
+    def _activate_block(self, block_index: int,
+                        override_effective_duration: Optional[float] = None) -> None:
         if not self._session:
             return
         blocks = self._session.timeline.blocks
@@ -288,6 +385,13 @@ class TimelineEngine:
         bs = self._session.block_states[block_index]
         bs.state = "active"
         bs.actual_start_epoch = time.time()
+
+        # Compute effective duration: nominal + any accumulated surplus.
+        if override_effective_duration is not None:
+            effective = override_effective_duration
+        else:
+            effective = block.duration + max(0.0, self._session_budget)
+        self._current_effective_duration = effective
 
         presenter = self._get_presenter(block.presenter_id)
         self._transition(EngineState.RUNNING)
@@ -302,6 +406,8 @@ class TimelineEngine:
             "slide_start": block.slide_start,
             "slide_end": block.slide_end,
             "duration_seconds": block.duration,
+            "effective_duration_seconds": effective,
+            "session_budget_seconds": self._session_budget,
             "end_condition": block.end_condition.value,
             "overrun_behavior": block.overrun_behavior.value,
             "activate_epoch": bs.actual_start_epoch,
@@ -331,6 +437,7 @@ class TimelineEngine:
             vib_scheduler=self._vib_scheduler,
             on_block_expired=self._on_block_time_expired,
             config=self._config,
+            effective_duration=effective,
         )
         _runner = self._block_runner
         _mono = now_mono
@@ -352,14 +459,19 @@ class TimelineEngine:
         if block and bs:
             bs.state = "completed"
             bs.actual_end_epoch = time.time()
-            overrun = max(0.0, bs.actual_end_epoch - bs.actual_start_epoch - block.duration)
+            actual_duration = bs.actual_end_epoch - bs.actual_start_epoch
+            overrun = max(0.0, actual_duration - self._current_effective_duration)
             bs.overrun_seconds = overrun
+
+            # Update running budget: positive = time saved, negative = time lost
+            self._session_budget += (self._current_effective_duration - actual_duration)
 
             self._emit("block:completed", {
                 "block_id": block.id,
                 "completion_reason": reason,
-                "actual_duration_seconds": bs.actual_end_epoch - bs.actual_start_epoch,
+                "actual_duration_seconds": actual_duration,
                 "overrun_seconds": overrun,
+                "session_budget_seconds": self._session_budget,
             }, room="session:all")
 
             if self._bridge:

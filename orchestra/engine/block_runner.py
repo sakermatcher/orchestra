@@ -37,12 +37,18 @@ class BlockRunner:
         vib_scheduler: VibrationScheduler,
         on_block_expired: Callable[[], None],
         config: dict,
+        effective_duration: Optional[float] = None,
     ):
         self._block = block
         self._socketio = socketio
         self._vib_scheduler = vib_scheduler
         self._on_block_expired = on_block_expired
         self._config = config
+        # effective_duration may be longer than block.duration when the session
+        # has accumulated surplus time from previous blocks finishing early.
+        self._effective_duration: float = (
+            effective_duration if effective_duration is not None else block.duration
+        )
 
         self._start_monotonic: float = 0.0
         self._paused_at: Optional[float] = None
@@ -100,8 +106,12 @@ class BlockRunner:
         return time.monotonic() - self._start_monotonic - self._total_paused
 
     @property
+    def effective_duration(self) -> float:
+        return self._effective_duration
+
+    @property
     def block_remaining_seconds(self) -> float:
-        return self._block.duration - self.block_elapsed_seconds
+        return self._effective_duration - self.block_elapsed_seconds
 
     @property
     def is_overrun(self) -> bool:
@@ -111,7 +121,7 @@ class BlockRunner:
     def overrun_seconds(self) -> float:
         if not self._overrun:
             return 0.0
-        return max(0.0, self.block_elapsed_seconds - self._block.duration)
+        return max(0.0, self.block_elapsed_seconds - self._effective_duration)
 
     # ------------------------------------------------------------------
     # Internal green threads
@@ -122,7 +132,7 @@ class BlockRunner:
                                     TIMER_BROADCAST_INTERVAL_MS) / 1000.0
         while self._running:
             elapsed = self.block_elapsed_seconds
-            remaining = self._block.duration - elapsed
+            remaining = self._effective_duration - elapsed
             payload = {
                 "session_elapsed_seconds": elapsed,   # engine will correct to session total
                 "block_elapsed_seconds": elapsed,
@@ -138,7 +148,7 @@ class BlockRunner:
                 break
 
     def _expiry_waiter(self) -> None:
-        """Sleep until block duration expires, then trigger callback."""
+        """Sleep until effective block duration expires, then trigger callback."""
         remaining = self.block_remaining_seconds
         if remaining > 0:
             if _USE_EVENTLET:

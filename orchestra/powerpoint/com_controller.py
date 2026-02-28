@@ -73,6 +73,21 @@ class PowerPointController:
     @com_retry()
     def open_presentation(self, filepath: str) -> None:
         _assert_com_thread()
+        # Close any existing slideshow and presentation from a previous session
+        # so that restarting a session works without quitting and relaunching.
+        if self._slideshow_window is not None:
+            try:
+                self._slideshow_window.View.Exit()
+            except Exception:
+                pass
+            self._slideshow_window = None
+        if self._presentation is not None:
+            try:
+                self._presentation.Close()
+            except Exception:
+                pass
+            self._presentation = None
+
         if self._application is None:
             self._application = win32com.client.Dispatch("PowerPoint.Application")
             self._application.Visible = True

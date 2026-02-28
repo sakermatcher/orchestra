@@ -29,6 +29,8 @@ def _make_engine():
     # Override _relay so callables execute immediately in tests instead of
     # being queued for a Flask/eventlet hub that doesn't exist here.
     engine._relay = lambda fn: fn()
+    # Disable the start delay so operator_go() activates synchronously.
+    engine._config["presentation_start_delay_seconds"] = 0
     engine.set_socketio(socketio)
     return engine, bridge, socketio
 

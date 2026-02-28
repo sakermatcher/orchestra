@@ -32,6 +32,34 @@
     .screen { display: none; min-height: 100vh; }
     .screen.active { display: flex; flex-direction: column; }
 
+    /* ---- WAITING SCREEN ---- */
+    #screenWaiting {
+      background: var(--bg);
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      text-align: center;
+      padding: 24px;
+    }
+    .waiting-spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .waiting-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .waiting-sub {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
     /* ---- ACTIVE PRESENTER SCREEN ---- */
     #screenActive {
       background: #0a2a1a;
@@ -108,6 +136,17 @@
       letter-spacing: 0.2px;
     }
 
+    /* Budget indicator: (+MM:SS) green = surplus, (-MM:SS) red = deficit */
+    #budgetDisplay {
+      font-size: 14px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      margin-top: 2px;
+      display: none;
+    }
+    #budgetDisplay.surplus { display: block; color: var(--green); }
+    #budgetDisplay.deficit { display: block; color: var(--red); }
+
     .active-bottom {
       padding: 16px 20px 32px;
       display: flex;
@@ -128,23 +167,36 @@
     }
     #notesBox.has-content { display: block; }
 
-    #advanceBtn {
-      display: none;
-      padding: 20px;
+    /* Slide navigation row: [← Prev] [Next →] */
+    .slide-nav-row {
+      display: flex;
+      gap: 10px;
+    }
+    .slide-nav-btn {
+      flex: 1;
+      padding: 18px 10px;
       border: none;
       border-radius: 12px;
-      background: var(--green);
-      color: #000;
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 800;
       cursor: pointer;
       letter-spacing: -0.3px;
       transition: opacity 0.15s;
     }
-    #advanceBtn.visible { display: block; }
-    #advanceBtn:active { opacity: 0.75; }
-    #screenActive.warn #advanceBtn { background: var(--yellow); }
-    #screenActive.danger #advanceBtn { background: var(--red); color: #fff; }
+    .slide-nav-btn:active { opacity: 0.75; }
+    .slide-nav-btn:disabled { opacity: 0.35; cursor: default; }
+
+    #prevSlideBtn {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    #nextSlideBtn {
+      background: var(--green);
+      color: #000;
+    }
+    #screenActive.warn #nextSlideBtn { background: var(--yellow); }
+    #screenActive.danger #nextSlideBtn { background: var(--red); color: #fff; }
 
     /* ---- INACTIVE PRESENTER SCREEN ---- */
     #screenInactive {
@@ -261,6 +313,15 @@
 <body>
 
 <!-- =====================================================================
+     WAITING SCREEN (shown after session:started, before block:activate)
+     ===================================================================== -->
+<div id="screenWaiting" class="screen active">
+  <div class="waiting-spinner"></div>
+  <div class="waiting-title">Starting…</div>
+  <div class="waiting-sub">Waiting for the presentation to begin</div>
+</div>
+
+<!-- =====================================================================
      ACTIVE PRESENTER SCREEN
      ===================================================================== -->
 <div id="screenActive" class="screen">
@@ -272,13 +333,17 @@
   <div class="countdown-container">
     <div id="countdownDisplay">--:--</div>
     <div id="countdownLabel">remaining</div>
+    <div id="budgetDisplay"></div>
     <div class="slide-info" id="slideInfo"></div>
     <div id="sessionElapsed">-- total elapsed</div>
   </div>
 
   <div class="active-bottom">
     <div id="notesBox"></div>
-    <button id="advanceBtn">Done — Next Section</button>
+    <div class="slide-nav-row">
+      <button id="prevSlideBtn" class="slide-nav-btn">← Prev</button>
+      <button id="nextSlideBtn" class="slide-nav-btn">Next →</button>
+    </div>
   </div>
 </div>
 

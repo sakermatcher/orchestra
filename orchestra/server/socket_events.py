@@ -130,6 +130,25 @@ def register_handlers(socketio):
                 "reason": "not_your_turn_or_not_eligible"
             }, room=sid)
 
+    @socketio.on("presenter:goto_slide")
+    def on_presenter_goto_slide(data):
+        engine = _get_engine()
+        if engine is None:
+            return
+        engine.handle_presenter_goto_slide(data)
+
+    @socketio.on("presenter:request_prev_block")
+    def on_presenter_prev_block(data):
+        engine = _get_engine()
+        if engine is None:
+            return
+        accepted = engine.handle_presenter_prev_block(data)
+        if not accepted:
+            sid = request.sid
+            socketio.emit("presenter:prev_block_rejected", {
+                "reason": "already_first_block_or_not_your_turn"
+            }, room=sid)
+
     @socketio.on("presenter:heartbeat")
     def on_heartbeat(data):
         # No-op: Socket.IO's own ping/pong handles keep-alive.
