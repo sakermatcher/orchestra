@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "53db3841-0152-49e8-ad5d-18b1ed10ad6f",
+  "name": "Test",
+  "presentation_file_path": "C:/Users/juanp/Downloads/Presentaciónretobloq3.pptx",
+  "created_at": "2026-02-28T19:22:29.053219+00:00",
+  "updated_at": "2026-02-28T21:01:45.303004+00:00",
+  "presenters": [
+    {
+      "id": "b61d95ef-7377-4596-9f4b-995a88d59ee7",
+      "name": "goma",
+      "color": "#E74C3C"
+    }
+  ],
+  "blocks": [
+    {
+      "id": "dad56b57-1d72-4e1c-bb32-e1fe06953a81",
+      "presenter_id": "b61d95ef-7377-4596-9f4b-995a88d59ee7",
+      "slide_start": 1,
+      "slide_end": 1,
+      "start_time": 0.0,
+      "duration": 41.5,
+      "end_condition": "either",
+      "overrun_behavior": "alert_only",
+      "notes": "holis",
+      "vibrations": [
+        {
+          "id": "344b5bec-2c06-4c7b-af80-b4e43e656e58",
+          "label": "Warning",
+          "seconds_before_end": 30.0,
+          "type": "short"
+        }
+      ]
+    },
+    {
+      "id": "c09c7785-a3c7-4697-be6c-3780357d82f3",
+      "presenter_id": "b61d95ef-7377-4596-9f4b-995a88d59ee7",
+      "slide_start": 2,
+      "slide_end": 4,
+      "start_time": 41.5,
+      "duration": 51.5,
+      "end_condition": "either",
+      "overrun_behavior": "alert_only",
+      "notes": "",
+      "vibrations": []
+    }
+  ]
+}

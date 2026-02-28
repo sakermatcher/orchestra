@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Orchestra — Join</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d0d0f;
+      --surface:  #1a1a1f;
+      --border:   #2d2d38;
+      --text:     #e8e8f0;
+      --muted:    #8888a0;
+      --accent:   #5264c8;
+      --green:    #3dc98e;
+      --red:      #e85454;
+      --yellow:   #e8c547;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      font-size: 16px;
+    }
+
+    .screen { display: none; }
+    .screen.active { display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* ---- JOIN SCREEN ---- */
+    #screenJoin {
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      gap: 20px;
+    }
+
+    .logo {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      color: var(--text);
+    }
+    .logo span { color: var(--accent); }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    select, input {
+      width: 100%;
+      background: #222228;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 16px;
+      appearance: none;
+      -webkit-appearance: none;
+      outline: none;
+    }
+    select:focus, input:focus { border-color: var(--accent); }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:active { opacity: 0.8; }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-success {
+      background: var(--green);
+      color: #000;
+    }
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .error-msg {
+      color: var(--red);
+      font-size: 13px;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+
+    /* ---- WAITING ROOM ---- */
+    #screenWaiting {
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      gap: 20px;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .waiting-title {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .waiting-sub {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .connected-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .connected-list h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .presenter-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+    }
+    .presenter-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .presenter-name { font-weight: 600; }
+    .presenter-status {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    /* ---- RECONNECT BANNER ---- */
+    #reconnectBanner {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: var(--yellow);
+      color: #000;
+      text-align: center;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      z-index: 999;
+    }
+    #reconnectBanner.show { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- =====================================================================
+     JOIN SCREEN
+     ===================================================================== -->
+<div id="screenJoin" class="screen active">
+  <div class="logo">Orche<span>stra</span></div>
+  <h2>Join Presentation</h2>
+
+  <div class="card">
+    <div>
+      <label>Your name</label>
+      <select id="presenterSelect">
+        <option value="">Loading presenters…</option>
+      </select>
+    </div>
+    <p id="errorMsg" class="error-msg"></p>
+    <button id="joinBtn" class="btn btn-primary" disabled>Join Session</button>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;text-align:center;">
+    Make sure you are on the same WiFi network.
+  </p>
+</div>
+
+<!-- =====================================================================
+     WAITING ROOM
+     ===================================================================== -->
+<div id="screenWaiting" class="screen">
+  <div class="logo">Orche<span>stra</span></div>
+  <div class="spinner"></div>
+  <p class="waiting-title" id="waitingTitle">Waiting for session to start…</p>
+  <p class="waiting-sub" id="waitingSub">The operator will begin shortly.</p>
+
+  <div class="connected-list" id="connectedList">
+    <h3>Connected presenters</h3>
+    <div id="connectedPresenterRows"></div>
+  </div>
+</div>
+
+<!-- Reconnect banner -->
+<div id="reconnectBanner">Reconnecting…</div>
+
+<script src="/static/socket.io.min.js"></script>
+<script src="/static/mobile/app.js"></script>
+</body>
+</html>

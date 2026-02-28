@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Orchestra — Presenter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d0d0f;
+      --surface:  #1a1a1f;
+      --border:   #2d2d38;
+      --text:     #e8e8f0;
+      --muted:    #8888a0;
+      --accent:   #5264c8;
+      --green:    #3dc98e;
+      --red:      #e85454;
+      --yellow:   #e8c547;
+      --orange:   #e88a28;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+
+    .screen { display: none; min-height: 100vh; }
+    .screen.active { display: flex; flex-direction: column; }
+
+    /* ---- ACTIVE PRESENTER SCREEN ---- */
+    #screenActive {
+      background: #0a2a1a;
+      transition: background 0.6s ease;
+      position: relative;
+      justify-content: space-between;
+      padding: 0;
+    }
+    #screenActive.warn { background: #2a2000; }
+    #screenActive.danger { background: #2a0a0a; }
+
+    .active-top-bar {
+      padding: 16px 20px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .block-badge {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .your-turn-badge {
+      background: var(--green);
+      color: #000;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    #screenActive.warn .your-turn-badge { background: var(--yellow); }
+    #screenActive.danger .your-turn-badge { background: var(--red); color: #fff; }
+
+    .countdown-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 8px;
+      padding: 20px;
+    }
+    #countdownDisplay {
+      font-size: clamp(60px, 20vw, 120px);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -4px;
+      line-height: 1;
+      color: #fff;
+    }
+    #screenActive.warn #countdownDisplay { color: var(--yellow); }
+    #screenActive.danger #countdownDisplay { color: var(--red); }
+
+    #countdownLabel {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      font-weight: 600;
+    }
+    .slide-info {
+      font-size: 13px;
+      color: rgba(255,255,255,0.4);
+      margin-top: 4px;
+    }
+
+    #sessionElapsed {
+      font-size: 13px;
+      color: rgba(255,255,255,0.35);
+      font-variant-numeric: tabular-nums;
+      margin-top: 6px;
+      letter-spacing: 0.2px;
+    }
+
+    .active-bottom {
+      padding: 16px 20px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    #notesBox {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 14px;
+      color: rgba(255,255,255,0.7);
+      max-height: 80px;
+      overflow-y: auto;
+      display: none;
+    }
+    #notesBox.has-content { display: block; }
+
+    #advanceBtn {
+      display: none;
+      padding: 20px;
+      border: none;
+      border-radius: 12px;
+      background: var(--green);
+      color: #000;
+      font-size: 18px;
+      font-weight: 800;
+      cursor: pointer;
+      letter-spacing: -0.3px;
+      transition: opacity 0.15s;
+    }
+    #advanceBtn.visible { display: block; }
+    #advanceBtn:active { opacity: 0.75; }
+    #screenActive.warn #advanceBtn { background: var(--yellow); }
+    #screenActive.danger #advanceBtn { background: var(--red); color: #fff; }
+
+    /* ---- INACTIVE PRESENTER SCREEN ---- */
+    #screenInactive {
+      background: var(--bg);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      gap: 20px;
+      text-align: center;
+    }
+
+    .now-presenting-label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .presenter-name-badge {
+      font-size: 24px;
+      font-weight: 800;
+      padding: 8px 20px;
+      border-radius: 10px;
+    }
+    .up-next-label {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .session-progress-bar {
+      width: 100%;
+      max-width: 360px;
+      height: 8px;
+      background: var(--surface);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .session-progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 4px;
+      transition: width 1s linear;
+    }
+
+    /* ---- PAUSED OVERLAY ---- */
+    #pausedOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #pausedOverlay.show {
+      display: flex;
+    }
+    .paused-text {
+      font-size: 48px;
+      font-weight: 900;
+      color: var(--yellow);
+      letter-spacing: -2px;
+    }
+    .paused-sub {
+      font-size: 16px;
+      color: var(--muted);
+    }
+
+    /* ---- COMPLETED SCREEN ---- */
+    #screenComplete {
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 24px;
+      text-align: center;
+      background: var(--bg);
+    }
+    .complete-emoji { font-size: 64px; }
+    .complete-title { font-size: 28px; font-weight: 800; }
+    .complete-sub { color: var(--muted); font-size: 16px; }
+    .btn-outline {
+      display: inline-block;
+      padding: 14px 28px;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      margin-top: 8px;
+    }
+
+    /* ---- RECONNECT BANNER ---- */
+    #reconnectBanner {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: var(--yellow);
+      color: #000;
+      text-align: center;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      z-index: 999;
+    }
+    #reconnectBanner.show { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- =====================================================================
+     ACTIVE PRESENTER SCREEN
+     ===================================================================== -->
+<div id="screenActive" class="screen">
+  <div class="active-top-bar">
+    <span class="block-badge" id="blockBadge">Block 1 of 1</span>
+    <span class="your-turn-badge">YOUR TURN</span>
+  </div>
+
+  <div class="countdown-container">
+    <div id="countdownDisplay">--:--</div>
+    <div id="countdownLabel">remaining</div>
+    <div class="slide-info" id="slideInfo"></div>
+    <div id="sessionElapsed">-- total elapsed</div>
+  </div>
+
+  <div class="active-bottom">
+    <div id="notesBox"></div>
+    <button id="advanceBtn">Done — Next Section</button>
+  </div>
+</div>
+
+<!-- =====================================================================
+     INACTIVE PRESENTER SCREEN
+     ===================================================================== -->
+<div id="screenInactive" class="screen">
+  <p class="now-presenting-label">Now presenting</p>
+  <div id="nowPresenterBadge" class="presenter-name-badge" style="background:#444;color:#fff;">—</div>
+  <p id="upNextLabel" class="up-next-label"></p>
+
+  <div class="session-progress-bar">
+    <div class="session-progress-fill" id="sessionProgressFill" style="width:0%"></div>
+  </div>
+  <p id="sessionProgressLabel" style="font-size:12px;color:var(--muted);margin-top:4px;"></p>
+</div>
+
+<!-- =====================================================================
+     COMPLETED SCREEN
+     ===================================================================== -->
+<div id="screenComplete" class="screen">
+  <div class="complete-emoji">🎉</div>
+  <div class="complete-title">Presentation Complete</div>
+  <div class="complete-sub" id="completeDuration"></div>
+  <button class="btn-outline" onclick="window.location.href='/join'">Return to Join</button>
+</div>
+
+<!-- PAUSED OVERLAY (shown on all screens) -->
+<div id="pausedOverlay">
+  <div class="paused-text">PAUSED</div>
+  <div class="paused-sub">Waiting for the operator to resume…</div>
+</div>
+
+<!-- Reconnect banner -->
+<div id="reconnectBanner">Reconnecting…</div>
+
+<script src="/static/socket.io.min.js"></script>
+<script src="/static/mobile/app.js"></script>
+</body>
+</html>

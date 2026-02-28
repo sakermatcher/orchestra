@@ -1,0 +1,8 @@
+PyQt6==6.7.0
+Flask==3.0.3
+Flask-SocketIO==5.3.6
+eventlet==0.36.1
+pywin32>=306
+python-pptx==1.0.0
+qrcode[pil]==7.4.2
+Pillow>=10.3.0
