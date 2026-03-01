@@ -18,7 +18,7 @@ try:
 except ImportError:
     _USE_EVENTLET = False
 
-from orchestra.models.block import Block, EndCondition, OverrunBehavior
+from orchestra.models.block import Block, EndCondition
 from orchestra.engine.vibration_scheduler import VibrationScheduler
 from orchestra.constants import TIMER_BROADCAST_INTERVAL_MS
 
@@ -156,12 +156,7 @@ class BlockRunner:
             else:
                 time.sleep(remaining)
         if self._running:
-            if self._block.overrun_behavior == OverrunBehavior.AUTO_ADVANCE:
-                self._on_block_expired()
-            else:
-                # alert_only — mark overrun and emit each second
-                self._overrun = True
-                self._start_overrun_ticker()
+            self._on_block_expired()
 
     def _start_overrun_ticker(self) -> None:
         if _USE_EVENTLET:

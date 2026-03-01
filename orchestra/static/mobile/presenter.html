@@ -171,13 +171,11 @@
     .slide-nav-row {
       display: flex;
       gap: 10px;
+      align-items: stretch;
     }
     .slide-nav-btn {
-      flex: 1;
-      padding: 18px 10px;
       border: none;
       border-radius: 12px;
-      font-size: 17px;
       font-weight: 800;
       cursor: pointer;
       letter-spacing: -0.3px;
@@ -187,11 +185,17 @@
     .slide-nav-btn:disabled { opacity: 0.35; cursor: default; }
 
     #prevSlideBtn {
+      flex: 0 0 auto;
+      padding: 14px 16px;
+      font-size: 15px;
       background: var(--surface);
-      color: var(--text);
+      color: var(--muted);
       border: 1px solid var(--border);
     }
     #nextSlideBtn {
+      flex: 1;
+      padding: 26px 10px;
+      font-size: 22px;
       background: var(--green);
       color: #000;
     }
