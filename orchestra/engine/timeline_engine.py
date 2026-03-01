@@ -262,8 +262,7 @@ class TimelineEngine:
         if slide_number is None:
             return False
 
-        # Clamp to block's slide range
-        slide_number = max(block.slide_start, min(block.slide_end, int(slide_number)))
+        slide_number = int(slide_number)
         self._com_goto_slide(slide_number)
         # Confirm navigation back to the requesting presenter
         self._emit("slide:goto", {

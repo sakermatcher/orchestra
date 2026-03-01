@@ -236,12 +236,6 @@ function initJoinPage() {
   socket.on("slide:goto", ({ slide_number }) => {
     State.currentSlide = slide_number;
     updateSlideButtonLabels();
-    const slideInfo = $("slideInfo");
-    if (slideInfo && State.isActive) {
-      const blockSlides = State.slideEnd - State.slideStart + 1;
-      const slideInBlock = State.currentSlide - State.slideStart + 1;
-      slideInfo.textContent = `Slide ${slideInBlock} of ${blockSlides}`;
-    }
   });
 
   socket.on("timer:tick", (payload) => {
@@ -306,19 +300,13 @@ function initJoinPage() {
   if (prevBtn) {
     prevBtn.addEventListener("click", () => {
       if (!State.isActive || !State.activeBlock) return;
-      if (State.currentSlide > State.slideStart) {
+      if (State.currentSlide > 1) {
         State.currentSlide--;
         socket.emit("presenter:goto_slide", {
           presenter_id: State.myId,
           slide_number: State.currentSlide,
         });
         updateSlideButtonLabels();
-      } else {
-        prevBtn.disabled = true;
-        socket.emit("presenter:request_prev_block", {
-          presenter_id: State.myId,
-          block_id: State.activeBlock.block_id,
-        });
       }
     });
   }
@@ -434,12 +422,6 @@ function initPresenterPage() {
   socket.on("slide:goto", ({ slide_number, reason }) => {
     State.currentSlide = slide_number;
     updateSlideButtonLabels();
-    const slideInfo = $("slideInfo");
-    if (slideInfo && State.isActive) {
-      const blockSlides = State.slideEnd - State.slideStart + 1;
-      const slideInBlock = State.currentSlide - State.slideStart + 1;
-      slideInfo.textContent = `Slide ${slideInBlock} of ${blockSlides}`;
-    }
   });
 
   // Timer correction
@@ -498,21 +480,13 @@ function initPresenterPage() {
   if (prevBtn) {
     prevBtn.addEventListener("click", () => {
       if (!State.isActive || !State.activeBlock) return;
-      if (State.currentSlide > State.slideStart) {
-        // Navigate to previous slide within the block
+      if (State.currentSlide > 1) {
         State.currentSlide--;
         socket.emit("presenter:goto_slide", {
           presenter_id: State.myId,
           slide_number: State.currentSlide,
         });
         updateSlideButtonLabels();
-      } else {
-        // Already at the first slide of this block — go back to previous block
-        prevBtn.disabled = true;
-        socket.emit("presenter:request_prev_block", {
-          presenter_id: State.myId,
-          block_id: State.activeBlock.block_id,
-        });
       }
     });
   }
@@ -740,12 +714,13 @@ function updateSlideButtonLabels() {
   const nextBtn = $("nextSlideBtn");
   const slideInfo = $("slideInfo");
 
-  const atFirst = State.currentSlide <= State.slideStart;
+  const atFirst = State.currentSlide <= 1;
   const atLast  = State.currentSlide >= State.slideEnd;
   const canClickAdvance = ["click", "either"].includes(State.endCondition);
 
-  if (prevBtn && !prevBtn.disabled) {
-    prevBtn.textContent = atFirst ? "← Prev Block" : "← Prev";
+  if (prevBtn) {
+    prevBtn.disabled = atFirst;
+    if (!atFirst) prevBtn.textContent = "← Prev";
   }
 
   if (nextBtn && !nextBtn.disabled) {
@@ -760,9 +735,13 @@ function updateSlideButtonLabels() {
   }
 
   if (slideInfo) {
-    const blockSlides = State.slideEnd - State.slideStart + 1;
-    const slideInBlock = State.currentSlide - State.slideStart + 1;
-    slideInfo.textContent = `Slide ${slideInBlock} of ${blockSlides}`;
+    if (State.currentSlide >= State.slideStart) {
+      const blockSlides = State.slideEnd - State.slideStart + 1;
+      const slideInBlock = State.currentSlide - State.slideStart + 1;
+      slideInfo.textContent = `Slide ${slideInBlock} of ${blockSlides}`;
+    } else {
+      slideInfo.textContent = `Slide ${State.currentSlide}`;
+    }
   }
 }
 
