@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
         self._pause_action.setEnabled(state in ("running", "paused"))
         self._skip_action.setEnabled(state == "running")
         self._abort_action.setEnabled(is_active)
+        self._sidebar.set_session_active(is_active)
 
         # After a session ends, return engine to TIMELINE_LOADED so a new
         # session can be started without reloading the timeline.

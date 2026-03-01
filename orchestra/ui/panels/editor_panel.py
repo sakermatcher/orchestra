@@ -82,6 +82,14 @@ class EditorPanel(QWidget):
         tb = QToolBar()
         tb.setMovable(False)
         tb.setIconSize(QSize(16, 16))
+        tb.setStyleSheet(
+            f"QToolButton {{ background:{Colours.ACCENT_BLUE}; border:none; border-radius:4px;"
+            f" padding:4px 10px; color:#fff; }}"
+            f"QToolButton:hover {{ background:#6374d8; }}"
+            f"QToolButton:pressed {{ background:#3d54b0; }}"
+            f"QToolButton:disabled {{ background:{Colours.BG_SURFACE};"
+            f" color:{Colours.TEXT_DISABLED}; }}"
+        )
 
         self._act_add_block = tb.addAction(
             _icon("add_block.png"), "+ Block", self.request_add_block)
@@ -249,7 +257,7 @@ class EditorPanel(QWidget):
         if w:
             if not has_presenters:
                 w.setStyleSheet(
-                    f"background:{Colours.ACCENT_BLUE}; color:#fff; font-weight:700;"
+                    f"background:{Colours.ACCENT_GREEN}; color:#000; font-weight:700;"
                     f"border-radius:4px; padding:4px 10px;"
                 )
             else:

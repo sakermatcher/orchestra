@@ -15,8 +15,18 @@ from PyQt6.QtWidgets import (
 )
 
 from orchestra.storage.timeline_store import list_timelines
+from orchestra.ui.theme import Colours
 
 _ICONS_DIR = Path(__file__).parent.parent / "icons"
+
+# Shared style for the small icon-only action buttons in the sidebar.
+# Uses ACCENT_BLUE so black icons are legible against a coloured background.
+_BTN_STYLE = (
+    f"QPushButton {{ background:{Colours.ACCENT_BLUE}; border:none;"
+    f"border-radius:4px; color:#fff; }}"
+    f"QPushButton:hover {{ background:#6374d8; }}"
+    f"QPushButton:pressed {{ background:#3d54b0; }}"
+)
 
 
 def _icon(name: str) -> QIcon:
@@ -84,6 +94,7 @@ class SidebarPanel(QWidget):
         self._btn_new.setIconSize(QSize(16, 16))
         self._btn_new.setToolTip("New Timeline")
         self._btn_new.setFixedSize(32, 32)
+        self._btn_new.setStyleSheet(_BTN_STYLE)
         self._btn_new.clicked.connect(self._on_new)
 
         self._btn_rename = QPushButton()
@@ -91,6 +102,7 @@ class SidebarPanel(QWidget):
         self._btn_rename.setIconSize(QSize(16, 16))
         self._btn_rename.setToolTip("Rename Timeline")
         self._btn_rename.setFixedSize(32, 32)
+        self._btn_rename.setStyleSheet(_BTN_STYLE)
         self._btn_rename.clicked.connect(self._on_rename)
 
         self._btn_delete = QPushButton()
@@ -98,6 +110,7 @@ class SidebarPanel(QWidget):
         self._btn_delete.setIconSize(QSize(16, 16))
         self._btn_delete.setToolTip("Delete Timeline")
         self._btn_delete.setFixedSize(32, 32)
+        self._btn_delete.setStyleSheet(_BTN_STYLE)
         self._btn_delete.clicked.connect(self._on_delete)
 
         btn_row.addWidget(self._btn_new)
@@ -133,6 +146,14 @@ class SidebarPanel(QWidget):
                     Qt.TransformationMode.SmoothTransformation,
                 )))
             self._list.addItem(item)
+
+    def set_session_active(self, active: bool) -> None:
+        """Disable timeline switching while a session is running."""
+        self._list.setEnabled(not active)
+        self._btn_new.setEnabled(not active)
+        self._btn_rename.setEnabled(not active)
+        self._btn_delete.setEnabled(not active)
+        self._btn_import.setEnabled(not active)
 
     def get_selected_timeline_id(self) -> str | None:
         item = self._list.currentItem()
