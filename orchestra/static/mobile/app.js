@@ -891,7 +891,7 @@ function triggerVibration(patternMs) {
         const dur = durationMs / 1000;
         osc.type = "sine";
         osc.frequency.value = 180;          // low buzz frequency
-        gain.gain.setValueAtTime(0.4, time);
+        gain.gain.setValueAtTime(0.8, time);
         gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
         osc.start(time);
         osc.stop(time + dur);

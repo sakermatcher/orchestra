@@ -24,8 +24,8 @@ COM_RETRY_ATTEMPTS = 3                 # Retries for COM calls before raising CO
 COM_RETRY_DELAY_MS = 100              # Delay between COM retries
 
 # Vibration patterns (ms)
-VIBRATION_SHORT_PATTERN_MS = [200]
-VIBRATION_LONG_PATTERN_MS = [500]
+VIBRATION_SHORT_PATTERN_MS = [800]
+VIBRATION_LONG_PATTERN_MS = [1500]
 
 # Data paths (relative to project root, resolved at runtime by config_store)
 DATA_DIR_NAME = "data"
