@@ -44,6 +44,10 @@ const State = {
   heartbeatTimer: null,
 };
 
+// AudioContext singleton for notification sounds (must be declared before any
+// function calls since `let` is not hoisted like `var`).
+let _audioCtx = null;
+
 // ---------------------------------------------------------------------------
 // DOM helpers
 // ---------------------------------------------------------------------------
@@ -233,13 +237,8 @@ function initPresenterPage() {
     if (stuckOnWaiting) window.location.href = "/join";
   }, 8000);
 
-  // Rejoin on connect (handles initial load and reconnects)
-  socket.on("connect", () => {
-    socket.emit("presenter:join", {
-      presenter_id: State.myId,
-      display_name: State.myName,
-    });
-  });
+  // Note: the global "connect" handler (top of file) already emits presenter:join
+  // when isPresenterPage is true, so no second handler is needed here.
 
   socket.on("presenter:join_ok", ({ presenter_id, name, color, session_snapshot }) => {
     clearTimeout(_safetyTimer);
@@ -420,6 +419,13 @@ function initPresenterPage() {
 function applySessionSnapshot(snapshot) {
   State.sessionState = snapshot.state;
   State.session = snapshot;
+
+  // Guard against a race condition: block:activate can arrive before join_ok
+  // (both are in flight at the same time near the end of the start delay).
+  // If we already processed block:activate, keep the screen as-is.
+  if (State.activeBlock) {
+    return;
+  }
 
   // Anchor the session elapsed chronometer.
   // Use completed block durations + current block elapsed for accuracy.
@@ -705,18 +711,56 @@ function handleTimerTick(payload) {
 }
 
 // ---------------------------------------------------------------------------
-// Vibration
+// Audio notification (replaces Vibration API — works without HTTPS)
 // ---------------------------------------------------------------------------
+
+function _getAudioContext() {
+  if (!_audioCtx || _audioCtx.state === "closed") {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    _audioCtx = new AC();
+  }
+  return _audioCtx;
+}
+
+// Prime the AudioContext on first user gesture (browsers require user
+// interaction before audio can play — call this from a click/tap handler).
 function requestVibrationPermission() {
-  // On iOS, vibration requires a user gesture — we trigger a 0ms vibration to prime it
-  if ("vibrate" in navigator) {
-    navigator.vibrate(0);
+  const ctx = _getAudioContext();
+  if (ctx && ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
   }
 }
 
+// Play a short buzz-tone pattern that mimics the feel of a vibration alert.
+// patternMs follows the same on/off/on/... convention as navigator.vibrate():
+//   even indices = "on" (tone plays), odd indices = silence gaps.
 function triggerVibration(patternMs) {
-  if ("vibrate" in navigator) {
-    navigator.vibrate(patternMs);
+  const ctx = _getAudioContext();
+  if (!ctx) return;
+  const doPlay = () => {
+    let time = ctx.currentTime;
+    patternMs.forEach((durationMs, i) => {
+      if (i % 2 === 0) {  // "on" segment — play a buzz tone
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const dur = durationMs / 1000;
+        osc.type = "sine";
+        osc.frequency.value = 180;          // low buzz frequency
+        gain.gain.setValueAtTime(0.4, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+        osc.start(time);
+        osc.stop(time + dur);
+      }
+      time += durationMs / 1000;            // advance clock past this segment
+    });
+  };
+  if (ctx.state === "suspended") {
+    ctx.resume().then(doPlay).catch(() => {});
+  } else {
+    doPlay();
   }
 }
 
