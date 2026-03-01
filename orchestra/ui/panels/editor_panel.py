@@ -10,9 +10,11 @@ Phase 2: Full timeline canvas with drag/resize. This file provides the panel
          framework and toolbar wiring.
 """
 from __future__ import annotations
+from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSlot
+from PyQt6.QtCore import Qt, pyqtSlot, QSize
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QSplitter, QToolBar, QLabel,
     QSizePolicy, QMessageBox,
@@ -22,6 +24,13 @@ from orchestra.bridge.qt_bridge import QtBridge
 from orchestra.models.timeline import Timeline
 from orchestra.storage.timeline_store import save_timeline
 from orchestra.ui.theme import Colours
+
+_ICONS_DIR = Path(__file__).parent.parent / "icons"
+
+
+def _icon(name: str) -> QIcon:
+    p = _ICONS_DIR / name
+    return QIcon(str(p)) if p.exists() else QIcon()
 
 
 class EditorPanel(QWidget):
@@ -44,9 +53,9 @@ class EditorPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Toolbar
-        toolbar = self._build_toolbar()
-        layout.addWidget(toolbar)
+        # Toolbar — stored so we can call widgetForAction later
+        self._toolbar = self._build_toolbar()
+        layout.addWidget(self._toolbar)
 
         # Canvas + block editor splitter (vertical)
         self._splitter = QSplitter(Qt.Orientation.Vertical)
@@ -72,16 +81,35 @@ class EditorPanel(QWidget):
     def _build_toolbar(self) -> QToolBar:
         tb = QToolBar()
         tb.setMovable(False)
+        tb.setIconSize(QSize(16, 16))
 
-        self._act_add_block = tb.addAction("+ Block", self.request_add_block)
-        self._act_del_block = tb.addAction("✕ Block", self._on_delete_block)
-        tb.addSeparator()
-        self._act_add_presenter = tb.addAction("+ Presenter", self.request_add_presenter)
-        self._act_del_presenter = tb.addAction("✕ Presenter", self._on_delete_presenter)
+        self._act_add_block = tb.addAction(
+            _icon("add_block.png"), "+ Block", self.request_add_block)
+        self._act_add_block.setToolTip("Add Block (Ctrl+B)")
+
+        self._act_del_block = tb.addAction(
+            _icon("remove_block.png"), "✕ Block", self._on_delete_block)
+        self._act_del_block.setToolTip("Delete selected block")
+
         tb.addSeparator()
 
-        self._act_start = tb.addAction("▶  Start Session", self._on_start_session)
-        # Make start action stand out
+        self._act_add_presenter = tb.addAction(
+            _icon("add_presenter.png"), "+ Presenter", self.request_add_presenter)
+        self._act_add_presenter.setToolTip("Add Presenter (Ctrl+P)")
+
+        self._act_del_presenter = tb.addAction(
+            _icon("remove_presenter.png"), "✕ Presenter", self._on_delete_presenter)
+        self._act_del_presenter.setToolTip("Remove Presenter")
+
+        self._act_rename_presenter = tb.addAction(
+            _icon("rename_presenter.png"), "Rename Presenter", self._on_rename_presenter)
+        self._act_rename_presenter.setToolTip("Rename / recolour a Presenter")
+
+        tb.addSeparator()
+
+        self._act_start = tb.addAction(
+            _icon("start.png"), "▶  Start Session", self._on_start_session)
+        self._act_start.setToolTip("Start Session (F5)")
         start_widget = tb.widgetForAction(self._act_start)
         if start_widget:
             start_widget.setStyleSheet(
@@ -110,6 +138,7 @@ class EditorPanel(QWidget):
         self._redo_stack.clear()
         self._canvas.set_timeline(timeline)
         self._set_toolbar_enabled(True)
+        self._update_presenter_button_state()
         # Tell the engine about the newly loaded timeline
         if self._engine:
             self._engine.load_timeline(timeline)
@@ -144,6 +173,7 @@ class EditorPanel(QWidget):
             self._timeline.add_presenter(presenter)
             save_timeline(self._timeline)
             self._canvas.set_timeline(self._timeline)
+            self._update_presenter_button_state()
             if self._engine:
                 self._engine.load_timeline(self._timeline)
             main = self.window()
@@ -158,6 +188,7 @@ class EditorPanel(QWidget):
         self._timeline = Timeline.from_dict(state)
         save_timeline(self._timeline)
         self._canvas.set_timeline(self._timeline)
+        self._update_presenter_button_state()
         self._sync_engine()
 
     def redo(self) -> None:
@@ -168,6 +199,7 @@ class EditorPanel(QWidget):
         self._timeline = Timeline.from_dict(state)
         save_timeline(self._timeline)
         self._canvas.set_timeline(self._timeline)
+        self._update_presenter_button_state()
         self._sync_engine()
 
     # ------------------------------------------------------------------
@@ -188,11 +220,40 @@ class EditorPanel(QWidget):
             self._engine.load_timeline(self._timeline)
 
     def _set_toolbar_enabled(self, enabled: bool) -> None:
-        self._act_add_block.setEnabled(enabled)
-        self._act_del_block.setEnabled(enabled)
-        self._act_add_presenter.setEnabled(enabled)
-        self._act_del_presenter.setEnabled(enabled)
-        self._act_start.setEnabled(enabled)
+        for act in (
+            self._act_add_block, self._act_del_block,
+            self._act_add_presenter, self._act_del_presenter,
+            self._act_rename_presenter, self._act_start,
+        ):
+            act.setEnabled(enabled)
+
+    def _update_presenter_button_state(self) -> None:
+        """When no presenters exist, highlight + Presenter and grey out all other actions."""
+        if not self._timeline:
+            return
+        has_presenters = bool(self._timeline.presenters)
+
+        # Actions that need at least one presenter to be useful
+        for act in (
+            self._act_add_block, self._act_del_block,
+            self._act_del_presenter, self._act_rename_presenter,
+            self._act_start,
+        ):
+            act.setEnabled(has_presenters)
+
+        # Add-presenter is always enabled so the user can fix an empty state
+        self._act_add_presenter.setEnabled(True)
+
+        # Style the add-presenter button to stand out when it's the only valid action
+        w = self._toolbar.widgetForAction(self._act_add_presenter)
+        if w:
+            if not has_presenters:
+                w.setStyleSheet(
+                    f"background:{Colours.ACCENT_BLUE}; color:#fff; font-weight:700;"
+                    f"border-radius:4px; padding:4px 10px;"
+                )
+            else:
+                w.setStyleSheet("")
 
     # ------------------------------------------------------------------
     # Slots
@@ -243,7 +304,40 @@ class EditorPanel(QWidget):
                 self._timeline.remove_presenter(presenter.id)
                 save_timeline(self._timeline)
                 self._canvas.set_timeline(self._timeline)
+                self._update_presenter_button_state()
                 self._sync_engine()
+
+    def _on_rename_presenter(self) -> None:
+        if not self._timeline or not self._timeline.presenters:
+            return
+        from PyQt6.QtWidgets import QInputDialog
+        from orchestra.ui.dialogs.presenter_dialog import PresenterDialog
+        names = [p.name for p in self._timeline.presenters]
+        name, ok = QInputDialog.getItem(
+            self, "Edit Presenter", "Select presenter to edit:", names, 0, False
+        )
+        if not ok or not name:
+            return
+        presenter = next((p for p in self._timeline.presenters if p.name == name), None)
+        if not presenter:
+            return
+        used_colors = [p.color for p in self._timeline.presenters if p.id != presenter.id]
+        # Save pre-edit state for undo (PresenterDialog mutates in-place on accept)
+        pre_edit_state = self._timeline.to_dict()
+        dlg = PresenterDialog(presenter=presenter, used_colors=used_colors, parent=self)
+        if dlg.exec():
+            # Push the snapshot taken before the mutation
+            self._undo_stack.append(pre_edit_state)
+            self._redo_stack.clear()
+            if len(self._undo_stack) > 50:
+                self._undo_stack.pop(0)
+            save_timeline(self._timeline)
+            self._canvas.set_timeline(self._timeline)
+            if self._engine:
+                self._engine.load_timeline(self._timeline)
+            main = self.window()
+            if hasattr(main, '_presenter_panel'):
+                main._presenter_panel.load_timeline_presenters(self._timeline)
 
     def _on_start_session(self) -> None:
         if not self._timeline:
