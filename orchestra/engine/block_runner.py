@@ -61,7 +61,7 @@ class BlockRunner:
     def start(self, start_monotonic: float) -> None:
         self._start_monotonic = start_monotonic
         self._running = True
-        self._vib_scheduler.schedule_block(self._block, start_monotonic)
+        self._vib_scheduler.schedule_block(self._block, start_monotonic, self._effective_duration)
 
         if _USE_EVENTLET:
             self._tick_thread = eventlet.spawn(self._tick_loop)

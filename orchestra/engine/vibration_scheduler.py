@@ -26,13 +26,24 @@ class VibrationScheduler:
         self._config = config
         self._green_threads: list = []
 
-    def schedule_block(self, block: Block, block_start_monotonic: float) -> None:
-        """Schedule all vibration events for a block. Call on block activation."""
+    def schedule_block(
+        self,
+        block: Block,
+        block_start_monotonic: float,
+        effective_duration: Optional[float] = None,
+    ) -> None:
+        """Schedule all vibration events for a block. Call on block activation.
+
+        effective_duration overrides block.duration when the session budget has
+        extended (or shortened) the block's running time, ensuring vibrations
+        fire relative to the *actual* end of the block, not the nominal one.
+        """
         self.cancel_all()
+        duration = effective_duration if effective_duration is not None else block.duration
         buffer_sec = self._config.get("vibration_fire_early_buffer_ms",
                                       VIBRATION_FIRE_EARLY_BUFFER_MS) / 1000.0
         for v in block.vibrations:
-            fire_at_elapsed = block.duration - v.seconds_before_end - buffer_sec
+            fire_at_elapsed = duration - v.seconds_before_end - buffer_sec
             if fire_at_elapsed < 0:
                 continue  # Only schedule future events
             target_monotonic = block_start_monotonic + fire_at_elapsed

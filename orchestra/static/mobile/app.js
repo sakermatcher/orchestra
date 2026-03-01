@@ -47,6 +47,10 @@ const State = {
 // AudioContext singleton for notification sounds (must be declared before any
 // function calls since `let` is not hoisted like `var`).
 let _audioCtx = null;
+// Keep-alive source node: a near-silent looping buffer that prevents mobile
+// browsers (iOS Safari, Chrome Android) from auto-suspending the AudioContext
+// between vibration events.
+let _keepAliveSource = null;
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -861,6 +865,7 @@ function _getAudioContext() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     _audioCtx = new AC();
+    _keepAliveSource = null;  // reset so keep-alive restarts on new context
   }
   return _audioCtx;
 }
@@ -869,9 +874,39 @@ function _getAudioContext() {
 // interaction before audio can play — call this from a click/tap handler).
 function requestVibrationPermission() {
   const ctx = _getAudioContext();
-  if (ctx && ctx.state === "suspended") {
-    ctx.resume().catch(() => {});
+  if (!ctx) return;
+  // iOS Safari requires a BufferSourceNode to be started *synchronously*
+  // within the user gesture to truly unlock the AudioContext.  A plain
+  // ctx.resume() without accompanying audio output is not sufficient.
+  const silentBuf = ctx.createBuffer(1, 1, ctx.sampleRate);
+  const unlock = ctx.createBufferSource();
+  unlock.buffer = silentBuf;
+  unlock.connect(ctx.destination);
+  unlock.start(0);  // synchronous — happens inside the gesture call stack
+  if (ctx.state === "suspended") {
+    ctx.resume().then(() => { _startKeepAlive(ctx); }).catch(() => {});
+  } else {
+    _startKeepAlive(ctx);
   }
+}
+
+// Start a near-silent looping buffer so the AudioContext stays "running"
+// between vibration events. Mobile browsers (iOS Safari, Chrome Android)
+// auto-suspend idle AudioContexts; without this the second and later
+// presenter:vibrate events arrive on a suspended context and ctx.resume()
+// can no longer be called without a user gesture.
+function _startKeepAlive(ctx) {
+  if (_keepAliveSource) return;  // already running
+  const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const gain = ctx.createGain();
+  gain.gain.value = 0.00001;   // effectively inaudible
+  src.connect(gain);
+  gain.connect(ctx.destination);
+  src.start();
+  _keepAliveSource = src;
 }
 
 // Play a short buzz-tone pattern that mimics the feel of a vibration alert.
@@ -900,8 +935,9 @@ function triggerVibration(patternMs) {
     });
   };
   if (ctx.state === "suspended") {
-    ctx.resume().then(doPlay).catch(() => {});
+    ctx.resume().then(() => { _startKeepAlive(ctx); doPlay(); }).catch(() => {});
   } else {
+    _startKeepAlive(ctx);
     doPlay();
   }
 }

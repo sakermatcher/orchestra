@@ -1,5 +1,5 @@
 {
-  "id": "224328db-b126-44a3-876c-f83a0aaf5fe6",
+  "id": "4342503f-d779-4bd7-bbf0-2f0fc6ddc1dd",
   "timeline_id": "53db3841-0152-49e8-ad5d-18b1ed10ad6f",
   "timeline_snapshot": {
     "schema_version": 1,
@@ -7,7 +7,7 @@
     "name": "Test",
     "presentation_file_path": "C:/Users/juanp/Downloads/Presentaci\u00f3nretobloq3.pptx",
     "created_at": "2026-02-28T19:22:29.053219+00:00",
-    "updated_at": "2026-03-01T00:35:32.950722+00:00",
+    "updated_at": "2026-03-01T00:44:11.384550+00:00",
     "presenters": [
       {
         "id": "b61d95ef-7377-4596-9f4b-995a88d59ee7",
@@ -42,7 +42,7 @@
             "id": "2f025c43-93de-45e4-99d1-482a9ad4b0dd",
             "label": "Warning",
             "seconds_before_end": 20.0,
-            "type": "short"
+            "type": "long"
           }
         ]
       },
@@ -61,7 +61,7 @@
             "id": "cccf436c-cf0c-4be2-b1dc-5dc31cda68fc",
             "label": "Warning",
             "seconds_before_end": 45.0,
-            "type": "short"
+            "type": "long"
           }
         ]
       },
@@ -86,14 +86,14 @@
             "id": "552e88cf-e742-494b-a21c-068a4386c33c",
             "label": "Warning",
             "seconds_before_end": 270.0,
-            "type": "short"
+            "type": "long"
           }
         ]
       }
     ]
   },
   "state": "warmup",
-  "started_at": "2026-03-01T00:35:41.764106+00:00",
+  "started_at": "2026-03-01T01:01:31.338643+00:00",
   "session_elapsed_seconds": 0.0,
   "current_block_index": 0,
   "block_states": [
