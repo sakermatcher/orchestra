@@ -8,12 +8,12 @@ from typing import Optional
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QSpinBox, QDoubleSpinBox, QComboBox,
+    QLabel, QSpinBox, QComboBox,
     QTextEdit, QTableWidget, QTableWidgetItem, QPushButton,
     QHeaderView,
 )
 
-from orchestra.models.block import Block, EndCondition, OverrunBehavior
+from orchestra.models.block import Block, EndCondition
 from orchestra.models.timeline import Timeline
 from orchestra.models.vibration import VibrationEvent
 from orchestra.ui.theme import Colours
@@ -65,21 +65,17 @@ class BlockEditorPanel(QWidget):
         slide_row.addWidget(self._slide_end)
         form.addRow("Slides:", slide_row)
 
-        self._duration = QDoubleSpinBox()
+        self._duration = QSpinBox()
         self._duration.setRange(1, 7200)
         self._duration.setSuffix(" sec")
         self._duration.valueChanged.connect(self._on_field_changed)
         form.addRow("Duration:", self._duration)
 
         self._end_cond = QComboBox()
-        self._end_cond.addItems(["time", "click", "either"])
+        self._end_cond.addItem("Time", "either")
+        self._end_cond.addItem("Click", "click")
         self._end_cond.currentIndexChanged.connect(self._on_field_changed)
         form.addRow("End on:", self._end_cond)
-
-        self._overrun = QComboBox()
-        self._overrun.addItems(["auto_advance", "alert_only"])
-        self._overrun.currentIndexChanged.connect(self._on_field_changed)
-        form.addRow("Overrun:", self._overrun)
 
         self._notes = QTextEdit()
         self._notes.setPlaceholderText("Block notes (shown to presenter)…")
@@ -144,9 +140,9 @@ class BlockEditorPanel(QWidget):
 
         self._slide_start.setValue(block.slide_start)
         self._slide_end.setValue(block.slide_end)
-        self._duration.setValue(block.duration)
-        self._end_cond.setCurrentText(block.end_condition.value)
-        self._overrun.setCurrentText(block.overrun_behavior.value)
+        self._duration.setValue(int(round(block.duration)))
+        idx = self._end_cond.findData(block.end_condition.value)
+        self._end_cond.setCurrentIndex(idx if idx >= 0 else 0)
         self._notes.blockSignals(True)
         self._notes.setPlainText(block.notes)
         self._notes.blockSignals(False)
@@ -173,8 +169,7 @@ class BlockEditorPanel(QWidget):
         self._block.slide_start = self._slide_start.value()
         self._block.slide_end   = self._slide_end.value()
         self._block.duration    = self._duration.value()
-        self._block.end_condition    = EndCondition(self._end_cond.currentText())
-        self._block.overrun_behavior = OverrunBehavior(self._overrun.currentText())
+        self._block.end_condition    = EndCondition(self._end_cond.currentData())
         self._block.notes = self._notes.toPlainText()
         if self._timeline:
             self._timeline.recompute_start_times()
@@ -190,7 +185,7 @@ class BlockEditorPanel(QWidget):
         if not self._block:
             return
         self._vib_table.blockSignals(True)
-        self._add_vibration_row("Warning", 30.0, "short")
+        self._add_vibration_row("Warning", 30, "short")
         self._vib_table.blockSignals(False)
         self._sync_vibrations_from_table()
         self.block_changed.emit(self._block.id)
@@ -202,11 +197,15 @@ class BlockEditorPanel(QWidget):
             self._sync_vibrations_from_table()
             self.block_changed.emit(self._block.id)
 
-    def _add_vibration_row(self, label: str, sec: float, vtype: str):
+    def _add_vibration_row(self, label: str, sec: int, vtype: str):
         row = self._vib_table.rowCount()
         self._vib_table.insertRow(row)
         self._vib_table.setItem(row, 0, QTableWidgetItem(label))
-        self._vib_table.setItem(row, 1, QTableWidgetItem(str(sec)))
+        sec_spin = QSpinBox()
+        sec_spin.setRange(1, 7200)
+        sec_spin.setValue(int(sec))
+        sec_spin.valueChanged.connect(self._on_vib_combo_changed)
+        self._vib_table.setCellWidget(row, 1, sec_spin)
         type_combo = QComboBox()
         type_combo.addItems(["short", "long"])
         type_combo.setCurrentText(vtype)
@@ -224,21 +223,17 @@ class BlockEditorPanel(QWidget):
             return
         vibs = []
         for row in range(self._vib_table.rowCount()):
-            label_item = self._vib_table.item(row, 0)
-            sec_item   = self._vib_table.item(row, 1)
+            label_item  = self._vib_table.item(row, 0)
+            sec_widget  = self._vib_table.cellWidget(row, 1)
             type_widget = self._vib_table.cellWidget(row, 2)
-            if label_item and sec_item and type_widget:
-                try:
-                    sec = float(sec_item.text())
-                except ValueError:
-                    sec = 30.0
+            if label_item and sec_widget and type_widget:
                 existing = self._block.vibrations[row] if row < len(self._block.vibrations) else None
                 vid = existing.id if existing else None
                 import uuid
                 vibs.append(VibrationEvent(
                     id=vid or str(uuid.uuid4()),
                     label=label_item.text(),
-                    seconds_before_end=sec,
+                    seconds_before_end=sec_widget.value(),
                     type=type_widget.currentText(),
                 ))
         self._block.vibrations = vibs

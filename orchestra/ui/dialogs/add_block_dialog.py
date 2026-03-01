@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QFormLayout, QSpinBox, QDoubleSpinBox,
+    QDialog, QVBoxLayout, QFormLayout, QSpinBox,
     QComboBox, QTextEdit, QDialogButtonBox, QLabel,
 )
 
-from orchestra.models.block import Block, EndCondition, OverrunBehavior
+from orchestra.models.block import Block, EndCondition
 from orchestra.models.timeline import Timeline
 from orchestra.constants import DEFAULT_BLOCK_DURATION_SECONDS
 
@@ -55,19 +55,16 @@ class AddBlockDialog(QDialog):
         slide_row.addWidget(self._slide_end)
         form.addRow("Slides:", slide_row_w)
 
-        self._duration = QDoubleSpinBox()
+        self._duration = QSpinBox()
         self._duration.setRange(1, 7200)
-        self._duration.setValue(DEFAULT_BLOCK_DURATION_SECONDS)
+        self._duration.setValue(int(DEFAULT_BLOCK_DURATION_SECONDS))
         self._duration.setSuffix(" sec")
         form.addRow("Duration:", self._duration)
 
         self._end_cond = QComboBox()
-        self._end_cond.addItems(["either", "time", "click"])
+        self._end_cond.addItem("Time", "either")
+        self._end_cond.addItem("Click", "click")
         form.addRow("End condition:", self._end_cond)
-
-        self._overrun = QComboBox()
-        self._overrun.addItems(["auto_advance", "alert_only"])
-        form.addRow("Overrun:", self._overrun)
 
         self._notes = QTextEdit()
         self._notes.setPlaceholderText("Notes visible to presenter during this block…")
@@ -102,8 +99,7 @@ class AddBlockDialog(QDialog):
             slide_start=start,
             slide_end=end,
             duration=self._duration.value(),
-            end_condition=EndCondition(self._end_cond.currentText()),
-            overrun_behavior=OverrunBehavior(self._overrun.currentText()),
+            end_condition=EndCondition(self._end_cond.currentData()),
             notes=self._notes.toPlainText(),
         )
         self.accept()
