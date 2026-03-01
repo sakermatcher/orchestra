@@ -67,7 +67,9 @@ function showScreen(id) {
 // Page detection
 // ---------------------------------------------------------------------------
 const isJoinPage = !!$("screenJoin");
-const isPresenterPage = !!$("screenActive");
+// Exclude join.html (which now also contains screenActive as a SPA).
+// isPresenterPage is only true on the standalone presenter.html fallback.
+const isPresenterPage = !!$("screenActive") && !$("screenJoin");
 
 // ---------------------------------------------------------------------------
 // Socket.IO connection
@@ -186,12 +188,9 @@ function initJoinPage() {
     sessionStorage.setItem("orchestra_session_state", State.sessionState);
     sessionStorage.setItem("orchestra_presenter_id", presenter_id);
 
-    if (State.sessionState === "running") {
-      // Session already started — navigate directly to presenter page
-      window.location.href = `/presenter/${presenter_id}`;
-    } else {
-      showScreen("screenWaiting");
-    }
+    // Stay on the same page (SPA) — AudioContext survives, no page reload.
+    applySessionSnapshot(session_snapshot);
+    startHeartbeat();
   });
 
   socket.on("presenter:join_error", ({ code, message }) => {
@@ -203,8 +202,148 @@ function initJoinPage() {
 
   socket.on("session:started", () => {
     sessionStorage.setItem("orchestra_session_state", "running");
-    window.location.href = `/presenter/${State.myId}`;
+    // Update URL without reloading — AudioContext is preserved.
+    if (State.myId) history.pushState({}, "", `/presenter/${State.myId}`);
+    // screenWaiting is already visible; block:activate will switch screens.
   });
+
+  // ---------------------------------------------------------------------------
+  // Presenter socket handlers (join.html is a SPA — all screens live here)
+  // ---------------------------------------------------------------------------
+
+  socket.on("block:activate", (payload) => {
+    handleBlockActivate(payload);
+  });
+
+  socket.on("block:completed", () => {
+    // Superseded by the next block:activate or session:completed
+  });
+
+  socket.on("block:overrun", () => {
+    if (State.isActive) {
+      const cd = $("countdownDisplay");
+      if (cd) {
+        cd.style.color = "#e85454";
+        setTimeout(() => { cd.style.color = ""; }, 500);
+      }
+    }
+  });
+
+  socket.on("slide:goto", ({ slide_number }) => {
+    State.currentSlide = slide_number;
+    updateSlideButtonLabels();
+    const slideInfo = $("slideInfo");
+    if (slideInfo && State.isActive) {
+      const blockSlides = State.slideEnd - State.slideStart + 1;
+      const slideInBlock = State.currentSlide - State.slideStart + 1;
+      slideInfo.textContent = `Slide ${slideInBlock} of ${blockSlides}`;
+    }
+  });
+
+  socket.on("timer:tick", (payload) => {
+    handleTimerTick(payload);
+  });
+
+  socket.on("presenter:vibrate", ({ pattern_ms }) => {
+    triggerVibration(pattern_ms);
+  });
+
+  socket.on("session:paused", () => {
+    $("pausedOverlay").classList.add("show");
+    State.sessionState = "paused";
+    State._pauseStartMs = Date.now();
+    clearCountdown();
+  });
+
+  socket.on("session:resumed", () => {
+    $("pausedOverlay").classList.remove("show");
+    State.sessionState = "running";
+    if (State._pauseStartMs !== null) {
+      State.sessionStartEpoch += (Date.now() - State._pauseStartMs);
+      State._pauseStartMs = null;
+    }
+    if (State.activeBlock && State.activateEpoch) {
+      startCountdown();
+    }
+  });
+
+  socket.on("session:completed", ({ total_actual_duration_seconds }) => {
+    sessionStorage.setItem("orchestra_session_state", "idle");
+    clearCountdown();
+    showScreen("screenComplete");
+    const dur = formatSeconds(total_actual_duration_seconds);
+    const el = $("completeDuration");
+    if (el) el.textContent = `Total duration: ${dur}`;
+  });
+
+  socket.on("session:aborted", () => {
+    sessionStorage.setItem("orchestra_session_state", "idle");
+    clearCountdown();
+    showScreen("screenComplete");
+    const el = $("completeDuration");
+    if (el) el.textContent = "Session was ended by the operator.";
+  });
+
+  socket.on("presenter:advance_rejected", () => {
+    const nb = $("nextSlideBtn");
+    if (nb && State.isActive) {
+      nb.disabled = false;
+      updateSlideButtonLabels();
+    }
+  });
+
+  socket.on("presenter:prev_block_rejected", () => {
+    const pb = $("prevSlideBtn");
+    if (pb) pb.disabled = false;
+  });
+
+  // Slide navigation buttons
+  const prevBtn = $("prevSlideBtn");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (!State.isActive || !State.activeBlock) return;
+      if (State.currentSlide > State.slideStart) {
+        State.currentSlide--;
+        socket.emit("presenter:goto_slide", {
+          presenter_id: State.myId,
+          slide_number: State.currentSlide,
+        });
+        updateSlideButtonLabels();
+      } else {
+        prevBtn.disabled = true;
+        socket.emit("presenter:request_prev_block", {
+          presenter_id: State.myId,
+          block_id: State.activeBlock.block_id,
+        });
+      }
+    });
+  }
+
+  const nextBtn = $("nextSlideBtn");
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (!State.isActive || !State.activeBlock) return;
+      if (State.currentSlide < State.slideEnd) {
+        State.currentSlide++;
+        socket.emit("presenter:goto_slide", {
+          presenter_id: State.myId,
+          slide_number: State.currentSlide,
+        });
+        updateSlideButtonLabels();
+      } else {
+        const canClick = ["click", "either"].includes(State.endCondition);
+        if (canClick) {
+          nextBtn.disabled = true;
+          nextBtn.textContent = "Advancing…";
+          socket.emit("presenter:request_advance", {
+            presenter_id: State.myId,
+            block_id: State.activeBlock.block_id,
+            request_epoch: Date.now() / 1000,
+          });
+        }
+      }
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -226,8 +365,11 @@ function initPresenterPage() {
     return;
   }
 
-  // Request vibration permission
-  requestVibrationPermission();
+  // Mobile browsers require a real user gesture before AudioContext can play.
+  // Register a one-time touch/click listener — the first tap on anything
+  // (a nav button, the screen, etc.) will prime the audio context.
+  document.addEventListener("touchstart", requestVibrationPermission, { once: true });
+  document.addEventListener("click",      requestVibrationPermission, { once: true });
 
   // Safety timer: if still on the waiting screen after 8 s, something went
   // wrong — send back to join so the presenter can re-select.
