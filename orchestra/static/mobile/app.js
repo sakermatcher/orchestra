@@ -682,8 +682,8 @@ function applySessionSnapshot(snapshot) {
 function handleBlockActivate(payload) {
   State.activeBlock = payload;
   State.activateEpoch = payload.activate_epoch * 1000;  // convert to ms
-  // Use effective_duration for the countdown so budget surplus is visible
-  State.blockDuration = payload.effective_duration_seconds || payload.duration_seconds;
+  // Use nominal duration only; surplus is shown as a parenthetical indicator.
+  State.blockDuration = payload.duration_seconds;
   State.endCondition = payload.end_condition;
   State.isActive = payload.presenter_id === State.myId;
 
@@ -912,10 +912,14 @@ function handleTimerTick(payload) {
       State.activateEpoch = Date.now() - (State.blockDuration - serverRemaining) * 1000;
     }
   }
-  // Update session progress for inactive screen
+  // Update session progress for inactive screen using client-side session clock
+  // (server's session_elapsed_seconds is block-level only, so we use the
+  // anchored sessionStartEpoch which tracks total non-paused session elapsed).
   if (!State.isActive) {
     const total = State.totalDurationSeconds || State.session?.total_duration_seconds || 1;
-    const elapsed = payload.session_elapsed_seconds || 0;
+    const elapsed = State.sessionStartEpoch
+      ? Math.max(0, (Date.now() - State.sessionStartEpoch) / 1000)
+      : payload.session_elapsed_seconds || 0;
     const pct = Math.min(1, elapsed / total);
     const fill = $("sessionProgressFill");
     if (fill) fill.style.width = `${(pct * 100).toFixed(1)}%`;

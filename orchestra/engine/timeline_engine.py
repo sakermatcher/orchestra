@@ -428,11 +428,13 @@ class TimelineEngine:
         bs.state = "active"
         bs.actual_start_epoch = time.time()
 
-        # Compute effective duration: nominal + any accumulated surplus.
+        # Compute effective duration: use nominal duration only.
+        # Surplus (session_budget) is communicated to presenters as an
+        # informational indicator — it does not extend the countdown timer.
         if override_effective_duration is not None:
             effective = override_effective_duration
         else:
-            effective = block.duration + max(0.0, self._session_budget)
+            effective = block.duration
         self._current_effective_duration = effective
 
         presenter = self._get_presenter(block.presenter_id)

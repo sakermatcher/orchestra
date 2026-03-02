@@ -204,9 +204,9 @@
       justify-content: space-between;
     }
     .block-badge {
-      font-size: 12px;
+      font-size: 15px;
       font-weight: 700;
-      color: var(--muted);
+      color: var(--text);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -249,25 +249,31 @@
       font-weight: 600;
     }
     .slide-info {
-      font-size: 13px;
-      color: rgba(255,255,255,0.4);
+      font-size: 16px;
+      color: rgba(255,255,255,0.75);
       margin-top: 4px;
     }
 
     #sessionElapsed {
-      font-size: 13px;
-      color: rgba(255,255,255,0.35);
+      font-size: 18px;
+      color: rgba(255,255,255,0.6);
       font-variant-numeric: tabular-nums;
       margin-top: 6px;
       letter-spacing: 0.2px;
     }
 
-    /* Budget indicator: (+MM:SS) green = surplus, (-MM:SS) red = deficit */
+    /* Budget indicator: (+MM:SS) surplus green / (-MM:SS) deficit red —
+       shown inline beside the countdown timer */
+    .countdown-row {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      justify-content: center;
+    }
     #budgetDisplay {
-      font-size: 14px;
+      font-size: clamp(20px, 6vw, 36px);
       font-weight: 700;
       font-variant-numeric: tabular-nums;
-      margin-top: 2px;
       display: none;
     }
     #budgetDisplay.surplus { display: block; color: var(--green); }
@@ -502,9 +508,11 @@
   </div>
 
   <div class="countdown-container">
-    <div id="countdownDisplay">--:--</div>
+    <div class="countdown-row">
+      <div id="countdownDisplay">--:--</div>
+      <div id="budgetDisplay"></div>
+    </div>
     <div id="countdownLabel">remaining</div>
-    <div id="budgetDisplay"></div>
     <div class="slide-info" id="slideInfo"></div>
     <div id="sessionElapsed">-- total elapsed</div>
   </div>
@@ -530,7 +538,7 @@
   <div class="session-progress-bar">
     <div class="session-progress-fill" id="sessionProgressFill" style="width:0%"></div>
   </div>
-  <p id="sessionProgressLabel" style="font-size:12px;color:var(--muted);margin-top:4px;"></p>
+  <p id="sessionProgressLabel" style="font-size:18px;font-weight:600;color:var(--text);margin-top:8px;font-variant-numeric:tabular-nums;"></p>
 </div>
 
 <!-- =====================================================================
