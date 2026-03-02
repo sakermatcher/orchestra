@@ -42,6 +42,7 @@ const State = {
 
   countdownTimer: null,
   heartbeatTimer: null,
+  awaitingPresenterStart: false,  // true for block 0 until presenter taps Start Timer
 };
 
 // AudioContext singleton for notification sounds (must be declared before any
@@ -295,6 +296,41 @@ function initJoinPage() {
     if (pb) pb.disabled = false;
   });
 
+  // Start Timer button (shown on the first block before timer begins)
+  const startTimerBtn = $("startTimerBtn");
+  if (startTimerBtn) {
+    startTimerBtn.addEventListener("click", () => {
+      if (!State.awaitingPresenterStart) return;
+      State.awaitingPresenterStart = false;
+      startTimerBtn.style.display = "none";
+
+      const slideNavRow = $("slideNavRow");
+      if (slideNavRow) slideNavRow.style.display = "";
+
+      const prevBtn = $("prevSlideBtn");
+      const nextBtn = $("nextSlideBtn");
+      if (prevBtn) prevBtn.disabled = false;
+      if (nextBtn) nextBtn.disabled = false;
+
+      // Shift session elapsed anchor forward by the pre-start wait so the
+      // displayed elapsed time doesn't include the period before Start Timer.
+      const waitMs = Date.now() - State.activateEpoch;
+      if (State.sessionStartEpoch !== null && waitMs > 0) {
+        State.sessionStartEpoch += waitMs;
+      }
+      // Use current time as the start epoch; first timer:tick will correct drift
+      State.activateEpoch = Date.now();
+
+      socket.emit("presenter:start_timer", {
+        presenter_id: State.myId,
+        block_id: State.activeBlock?.block_id,
+      });
+
+      updateSlideButtonLabels();
+      startCountdown();
+    });
+  }
+
   // Slide navigation buttons
   const prevBtn = $("prevSlideBtn");
   if (prevBtn) {
@@ -531,6 +567,41 @@ function initPresenterPage() {
     const pb = $("prevSlideBtn");
     if (pb) pb.disabled = false;
   });
+
+  // Start Timer button (shown on the first block before timer begins)
+  const startTimerBtnP = $("startTimerBtn");
+  if (startTimerBtnP) {
+    startTimerBtnP.addEventListener("click", () => {
+      if (!State.awaitingPresenterStart) return;
+      State.awaitingPresenterStart = false;
+      startTimerBtnP.style.display = "none";
+
+      const slideNavRow = $("slideNavRow");
+      if (slideNavRow) slideNavRow.style.display = "";
+
+      const prevBtn = $("prevSlideBtn");
+      const nextBtn = $("nextSlideBtn");
+      if (prevBtn) prevBtn.disabled = false;
+      if (nextBtn) nextBtn.disabled = false;
+
+      // Shift session elapsed anchor forward by the pre-start wait so the
+      // displayed elapsed time doesn't include the period before Start Timer.
+      const waitMsP = Date.now() - State.activateEpoch;
+      if (State.sessionStartEpoch !== null && waitMsP > 0) {
+        State.sessionStartEpoch += waitMsP;
+      }
+      // Use current time as the start epoch; first timer:tick will correct drift
+      State.activateEpoch = Date.now();
+
+      socket.emit("presenter:start_timer", {
+        presenter_id: State.myId,
+        block_id: State.activeBlock?.block_id,
+      });
+
+      updateSlideButtonLabels();
+      startCountdown();
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +663,7 @@ function applySessionSnapshot(snapshot) {
         overrun_behavior: b.overrun_behavior,
         activate_epoch: snapshot.activate_epoch,
         notes: b.notes,
+        awaiting_presenter_start: snapshot.awaiting_presenter_start || false,
       };
       handleBlockActivate(payload);
     } else {
@@ -620,6 +692,9 @@ function handleBlockActivate(payload) {
   State.slideEnd = payload.slide_end ?? null;
   State.currentSlide = payload.slide_start ?? null;
   State.sessionBudgetSeconds = payload.session_budget_seconds || 0;
+
+  // Block 0 waits for the presenting participant to tap "Start Timer"
+  State.awaitingPresenterStart = !!(payload.awaiting_presenter_start && State.isActive);
 
   clearCountdown();
 
@@ -654,16 +729,30 @@ function showActiveScreen(payload) {
     }
   }
 
-  // Re-enable nav buttons
-  const prevBtn = $("prevSlideBtn");
-  const nextBtn = $("nextSlideBtn");
-  if (prevBtn) prevBtn.disabled = false;
-  if (nextBtn) nextBtn.disabled = false;
+  const startTimerBtn = $("startTimerBtn");
+  const slideNavRow = $("slideNavRow");
 
-  // Update slide info and button labels
-  updateSlideButtonLabels();
+  if (State.awaitingPresenterStart) {
+    // Show full-duration label and the Start Timer button; hide nav
+    const cd = $("countdownDisplay");
+    if (cd) cd.textContent = formatSeconds(State.blockDuration);
+    if (startTimerBtn) startTimerBtn.style.display = "block";
+    if (slideNavRow) slideNavRow.style.display = "none";
+  } else {
+    // Normal flow: hide start button, show nav, start countdown
+    if (startTimerBtn) startTimerBtn.style.display = "none";
+    if (slideNavRow) slideNavRow.style.display = "";
 
-  startCountdown();
+    // Re-enable nav buttons
+    const prevBtn = $("prevSlideBtn");
+    const nextBtn = $("nextSlideBtn");
+    if (prevBtn) prevBtn.disabled = false;
+    if (nextBtn) nextBtn.disabled = false;
+
+    // Update slide info and button labels
+    updateSlideButtonLabels();
+    startCountdown();
+  }
 }
 
 function showInactiveScreen(snapshot, currentBlockPayload) {

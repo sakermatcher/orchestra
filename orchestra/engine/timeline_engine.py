@@ -64,6 +64,8 @@ class TimelineEngine:
         # Effective duration used for the currently active block (may exceed
         # block.duration when surplus budget has accumulated).
         self._current_effective_duration: float = 0.0
+        # True while block 0 is waiting for the first presenter to tap Start Timer.
+        self._awaiting_presenter_start: bool = False
 
     # ------------------------------------------------------------------
     # Dependency injection
@@ -135,6 +137,7 @@ class TimelineEngine:
         self._vib_scheduler = VibrationScheduler(self._socketio, self._config)
         self._session_budget = 0.0
         self._current_effective_duration = 0.0
+        self._awaiting_presenter_start = False
         self._transition(EngineState.WARMUP)
 
         # Emit session:warmup to all connected clients
@@ -310,6 +313,45 @@ class TimelineEngine:
         self._activate_block(current_idx - 1, override_effective_duration=override_eff)
         return True
 
+    def handle_presenter_start_timer(self, data: dict) -> bool:
+        """
+        The first-block presenter clicked 'Start Timer'.
+        Discard the old (paused) runner, reset the block start epoch to now,
+        and launch a fresh runner so timing is measured from this moment.
+        Returns True if accepted.
+        """
+        if self._state != EngineState.RUNNING:
+            return False
+        if not self._session or not self._block_runner:
+            return False
+
+        block = self._session.current_block
+        bs = self._session.current_block_state
+        if block is None or bs is None:
+            return False
+        if data.get("presenter_id") != block.presenter_id:
+            return False
+
+        # Reset start epoch so budget calculations ignore the pre-start wait.
+        bs.actual_start_epoch = time.time()
+        self._awaiting_presenter_start = False
+
+        # Replace the paused runner with a fresh one starting right now.
+        self._stop_block_runner()
+        now_mono = time.monotonic()
+        self._session.block_start_monotonic = now_mono
+        self._block_runner = BlockRunner(
+            block=block,
+            socketio=self._socketio,
+            vib_scheduler=self._vib_scheduler,
+            on_block_expired=self._on_block_time_expired,
+            config=self._config,
+            effective_duration=self._current_effective_duration,
+        )
+        _new_runner = self._block_runner
+        self._relay(lambda: _new_runner.start(now_mono))
+        return True
+
     # ------------------------------------------------------------------
     # Session snapshot (for /api/session and WebSocket state_sync)
     # ------------------------------------------------------------------
@@ -357,6 +399,7 @@ class TimelineEngine:
                 self._session.current_block_state.actual_start_epoch
                 if self._session.current_block_state else 0.0
             ),
+            "awaiting_presenter_start": self._awaiting_presenter_start,
         }
 
     # ------------------------------------------------------------------
@@ -395,6 +438,10 @@ class TimelineEngine:
         presenter = self._get_presenter(block.presenter_id)
         self._transition(EngineState.RUNNING)
 
+        is_first_block = block_index == 0
+        if is_first_block:
+            self._awaiting_presenter_start = True
+
         payload = {
             "block_id": block.id,
             "presenter_id": block.presenter_id,
@@ -411,6 +458,7 @@ class TimelineEngine:
             "overrun_behavior": block.overrun_behavior.value,
             "activate_epoch": bs.actual_start_epoch,
             "notes": block.notes,
+            "awaiting_presenter_start": is_first_block,
         }
         self._emit("block:activate", payload, room="session:all")
         self._emit("slide:goto", {
@@ -440,7 +488,8 @@ class TimelineEngine:
         )
         _runner = self._block_runner
         _mono = now_mono
-        self._relay(lambda: _runner.start(_mono))
+        _first = is_first_block
+        self._relay(lambda: _runner.start(_mono, paused=_first))
 
     def _on_block_time_expired(self) -> None:
         """Called from block runner green thread when time expires."""

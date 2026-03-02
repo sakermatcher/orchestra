@@ -202,6 +202,22 @@
     #screenActive.warn #nextSlideBtn { background: var(--yellow); }
     #screenActive.danger #nextSlideBtn { background: var(--red); color: #fff; }
 
+    #startTimerBtn {
+      display: none;
+      width: 100%;
+      padding: 26px 10px;
+      border: none;
+      border-radius: 12px;
+      font-size: 22px;
+      font-weight: 800;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      letter-spacing: -0.3px;
+      transition: opacity 0.15s;
+    }
+    #startTimerBtn:active { opacity: 0.75; }
+
     /* ---- INACTIVE PRESENTER SCREEN ---- */
     #screenInactive {
       background: var(--bg);
@@ -344,7 +360,8 @@
 
   <div class="active-bottom">
     <div id="notesBox"></div>
-    <div class="slide-nav-row">
+    <button id="startTimerBtn">&#9654; Start Timer</button>
+    <div class="slide-nav-row" id="slideNavRow">
       <button id="prevSlideBtn" class="slide-nav-btn">← Prev</button>
       <button id="nextSlideBtn" class="slide-nav-btn">Next →</button>
     </div>

@@ -58,9 +58,16 @@ class BlockRunner:
         self._tick_thread = None
         self._expiry_thread = None
 
-    def start(self, start_monotonic: float) -> None:
+    def start(self, start_monotonic: float, paused: bool = False) -> None:
         self._start_monotonic = start_monotonic
         self._running = True
+
+        if paused:
+            # Start in paused state: no threads spawned, no vibrations scheduled.
+            # Call resume() later to actually begin timing.
+            self._paused_at = start_monotonic
+            return
+
         self._vib_scheduler.schedule_block(self._block, start_monotonic, self._effective_duration)
 
         if _USE_EVENTLET:

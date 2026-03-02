@@ -149,6 +149,13 @@ def register_handlers(socketio):
                 "reason": "already_first_block_or_not_your_turn"
             }, room=sid)
 
+    @socketio.on("presenter:start_timer")
+    def on_presenter_start_timer(data):
+        engine = _get_engine()
+        if engine is None:
+            return
+        engine.handle_presenter_start_timer(data)
+
     @socketio.on("presenter:heartbeat")
     def on_heartbeat(data):
         # No-op: Socket.IO's own ping/pong handles keep-alive.
