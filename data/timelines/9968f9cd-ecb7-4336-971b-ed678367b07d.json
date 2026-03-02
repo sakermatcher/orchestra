@@ -4,7 +4,7 @@
   "name": "Orchestra",
   "presentation_file_path": "C:/Users/juanp/Downloads/Orchestra.pptx",
   "created_at": "2026-03-01T01:50:32.844017+00:00",
-  "updated_at": "2026-03-02T05:00:15.020225+00:00",
+  "updated_at": "2026-03-02T05:22:21.698274+00:00",
   "presenters": [
     {
       "id": "16c2eb8a-a83d-4712-9323-f5832a359e92",
@@ -59,7 +59,7 @@
     {
       "id": "40182ceb-ab7d-44dd-bf5a-cb9ca6e61837",
       "presenter_id": "df815eb3-64ac-4ad8-9460-8b8d11380d08",
-      "slide_start": 8,
+      "slide_start": 7,
       "slide_end": 11,
       "start_time": 180.0,
       "duration": 120.0,

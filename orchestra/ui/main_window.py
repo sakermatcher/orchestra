@@ -13,6 +13,7 @@ The WorkspaceStack switches between EditorPanel (index 0) and SessionPanel (inde
 based on engine state via QtBridge signals.
 """
 from __future__ import annotations
+from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSlot
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
 from PyQt6.QtWidgets import (
@@ -23,6 +24,8 @@ from PyQt6.QtWidgets import (
 
 from orchestra.bridge.qt_bridge import QtBridge
 from orchestra.constants import SIDEBAR_WIDTH, PRESENTER_PANEL_WIDTH
+
+_ICONS_DIR = Path(__file__).parent / "icons"
 
 
 class MainWindow(QMainWindow):
@@ -36,6 +39,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Orchestra")
         self.setMinimumSize(1100, 700)
         self.resize(1400, 860)
+
+        # Set window icon from orchestra.jpg
+        icon_path = _ICONS_DIR / "orchestra.jpg"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         self._build_menu()
         self._build_status_bar()
@@ -139,18 +147,23 @@ class MainWindow(QMainWindow):
             self._tray = None
             return
 
-        # Generate a simple icon with "O" text
-        pixmap = QPixmap(32, 32)
-        pixmap.fill(QColor("#5264c8"))
-        painter = QPainter(pixmap)
-        painter.setPen(QColor("#ffffff"))
-        font = QFont()
-        font.setBold(True)
-        font.setPixelSize(20)
-        painter.setFont(font)
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "O")
-        painter.end()
-        icon = QIcon(pixmap)
+        # Use the real orchestra icon file
+        icon_path = _ICONS_DIR / "orchestra.jpg"
+        if icon_path.exists():
+            icon = QIcon(str(icon_path))
+        else:
+            # Fallback: generate a simple icon with "O" text
+            pixmap = QPixmap(32, 32)
+            pixmap.fill(QColor("#5264c8"))
+            painter = QPainter(pixmap)
+            painter.setPen(QColor("#ffffff"))
+            font = QFont()
+            font.setBold(True)
+            font.setPixelSize(20)
+            painter.setFont(font)
+            painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "O")
+            painter.end()
+            icon = QIcon(pixmap)
 
         self._tray = QSystemTrayIcon(icon, self)
         self._tray.setToolTip("Orchestra")
@@ -324,18 +337,7 @@ class MainWindow(QMainWindow):
                 return
             self._engine.abort_session()
 
-        # Minimize to tray unless explicitly quitting
-        if not self._force_quit and self._tray and self._tray.isVisible():
-            event.ignore()
-            self.hide()
-            self._tray.showMessage(
-                "Orchestra",
-                "Orchestra is minimized to the system tray.",
-                QSystemTrayIcon.MessageIcon.Information,
-                2000,
-            )
-            return
-
+        # Always accept the close — quit the application
         event.accept()
 
     def _on_quit(self) -> None:

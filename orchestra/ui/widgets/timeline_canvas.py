@@ -108,6 +108,17 @@ class TimelineCanvas(QWidget):
         w = TIMELINE_LANE_LABEL_WIDTH + int(total_sec * self._zoom) + 40
         h = TIMELINE_RULER_HEIGHT + n_lanes * TIMELINE_LANE_HEIGHT
         self.setMinimumSize(w, h)
+        self.resize(w, h)
+
+    def sizeHint(self):
+        if self._timeline:
+            n_lanes = max(1, len(self._timeline.presenters))
+            total_sec = max(60.0, self._timeline.total_duration + 30)
+            w = TIMELINE_LANE_LABEL_WIDTH + int(total_sec * self._zoom) + 40
+            h = TIMELINE_RULER_HEIGHT + n_lanes * TIMELINE_LANE_HEIGHT
+            from PyQt6.QtCore import QSize
+            return QSize(w, h)
+        return super().sizeHint()
 
     # ------------------------------------------------------------------
     # Paint

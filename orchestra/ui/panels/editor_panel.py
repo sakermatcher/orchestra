@@ -17,7 +17,7 @@ from PyQt6.QtCore import Qt, pyqtSlot, QSize
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QSplitter, QToolBar, QLabel,
-    QSizePolicy, QMessageBox,
+    QSizePolicy, QMessageBox, QScrollArea,
 )
 
 from orchestra.bridge.qt_bridge import QtBridge
@@ -61,10 +61,19 @@ class EditorPanel(QWidget):
         self._splitter = QSplitter(Qt.Orientation.Vertical)
 
         from orchestra.ui.widgets.timeline_canvas import TimelineCanvas
-        self._canvas = TimelineCanvas(parent=self)
+        self._canvas = TimelineCanvas()
         self._canvas.block_selected.connect(self._on_block_selected)
         self._canvas.timeline_mutated.connect(self._on_timeline_mutated)
-        self._splitter.addWidget(self._canvas)
+
+        self._canvas_scroll = QScrollArea()
+        self._canvas_scroll.setWidget(self._canvas)
+        self._canvas_scroll.setWidgetResizable(False)
+        self._canvas_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._canvas_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._canvas_scroll.setFrameShape(self._canvas_scroll.Shape.NoFrame)
+        self._splitter.addWidget(self._canvas_scroll)
 
         from orchestra.ui.panels.block_editor_panel import BlockEditorPanel
         self._block_editor = BlockEditorPanel(parent=self)
