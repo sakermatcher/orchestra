@@ -53,6 +53,9 @@ let _audioCtx = null;
 // between vibration events.
 let _keepAliveSource = null;
 
+// Screen Wake Lock to prevent the display from turning off during a session.
+let _wakeLock = null;
+
 // ---------------------------------------------------------------------------
 // DOM helpers
 // ---------------------------------------------------------------------------
@@ -196,6 +199,7 @@ function initJoinPage() {
     // Stay on the same page (SPA) — AudioContext survives, no page reload.
     applySessionSnapshot(session_snapshot);
     startHeartbeat();
+    acquireWakeLock();
   });
 
   socket.on("presenter:join_error", ({ code, message }) => {
@@ -274,6 +278,7 @@ function initJoinPage() {
 
   socket.on("session:completed", ({ total_actual_duration_seconds }) => {
     sessionStorage.setItem("orchestra_session_state", "idle");
+    releaseWakeLock();
     clearCountdown();
     showScreen("screenComplete");
     const dur = formatSeconds(total_actual_duration_seconds);
@@ -283,6 +288,7 @@ function initJoinPage() {
 
   socket.on("session:aborted", () => {
     sessionStorage.setItem("orchestra_session_state", "idle");
+    releaseWakeLock();
     clearCountdown();
     showScreen("screenComplete");
     const el = $("completeDuration");
@@ -424,6 +430,7 @@ function initPresenterPage() {
     }
 
     startHeartbeat();
+    acquireWakeLock();
   });
 
   socket.on("presenter:join_error", ({ code }) => {
@@ -503,6 +510,7 @@ function initPresenterPage() {
 
   socket.on("session:completed", ({ total_actual_duration_seconds }) => {
     sessionStorage.setItem("orchestra_session_state", "idle");
+    releaseWakeLock();
     clearCountdown();
     showScreen("screenComplete");
     const dur = formatSeconds(total_actual_duration_seconds);
@@ -512,6 +520,7 @@ function initPresenterPage() {
 
   socket.on("session:aborted", () => {
     sessionStorage.setItem("orchestra_session_state", "idle");
+    releaseWakeLock();
     clearCountdown();
     showScreen("screenComplete");
     const el = $("completeDuration");
@@ -1022,6 +1031,42 @@ function triggerVibration(patternMs) {
     doPlay();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Screen Wake Lock (keeps display on during active sessions)
+// ---------------------------------------------------------------------------
+
+// Acquire a screen wake lock so the device display stays on.
+// Uses the Screen Wake Lock API (Safari iOS 16.4+, Chrome 84+, Edge 84+).
+// Silently no-ops on unsupported browsers — non-fatal.
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _wakeLock = await navigator.wakeLock.request('screen');
+    _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+  } catch (_) {
+    // Denied (e.g. battery saver mode) — non-fatal.
+  }
+}
+
+function releaseWakeLock() {
+  if (_wakeLock) {
+    _wakeLock.release().catch(() => {});
+    _wakeLock = null;
+  }
+}
+
+// The browser automatically releases the wake lock when the page is hidden
+// (e.g. user switches apps). Re-acquire it when they come back, as long as
+// the session is still active.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && _wakeLock === null) {
+    const active = State.sessionState === 'running'
+                || State.sessionState === 'warmup'
+                || State.sessionState === 'paused';
+    if (active) acquireWakeLock();
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Heartbeat
