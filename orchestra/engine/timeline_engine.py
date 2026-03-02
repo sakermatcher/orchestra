@@ -350,6 +350,12 @@ class TimelineEngine:
         )
         _new_runner = self._block_runner
         self._relay(lambda: _new_runner.start(now_mono))
+
+        # Notify all clients that the real timer has started so they can
+        # reset their session elapsed clock to this moment.
+        self._emit("session:timer_started", {
+            "start_epoch": bs.actual_start_epoch,
+        }, room="session:all")
         return True
 
     # ------------------------------------------------------------------

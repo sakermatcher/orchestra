@@ -243,6 +243,12 @@ function initJoinPage() {
     handleTimerTick(payload);
   });
 
+  socket.on("session:timer_started", () => {
+    // Reset the session elapsed clock for all clients; the real
+    // presentation content starts now (after the first-block pre-start wait).
+    State.sessionStartEpoch = Date.now();
+  });
+
   socket.on("presenter:vibrate", ({ pattern_ms }) => {
     triggerVibration(pattern_ms);
   });
@@ -312,12 +318,9 @@ function initJoinPage() {
       if (prevBtn) prevBtn.disabled = false;
       if (nextBtn) nextBtn.disabled = false;
 
-      // Shift session elapsed anchor forward by the pre-start wait so the
-      // displayed elapsed time doesn't include the period before Start Timer.
-      const waitMs = Date.now() - State.activateEpoch;
-      if (State.sessionStartEpoch !== null && waitMs > 0) {
-        State.sessionStartEpoch += waitMs;
-      }
+      // Reset session clock to now — this moment is the real session start.
+      // The pre-start wait (warmup + GO press wait) is excluded.
+      State.sessionStartEpoch = Date.now();
       // Use current time as the start epoch; first timer:tick will correct drift
       State.activateEpoch = Date.now();
 
@@ -463,6 +466,12 @@ function initPresenterPage() {
   // Timer correction
   socket.on("timer:tick", (payload) => {
     handleTimerTick(payload);
+  });
+
+  socket.on("session:timer_started", () => {
+    // Reset the session elapsed clock for all clients; the real
+    // presentation content starts now (after the first-block pre-start wait).
+    State.sessionStartEpoch = Date.now();
   });
 
   // Vibration
@@ -809,7 +818,7 @@ function updateSlideButtonLabels() {
 
   if (prevBtn) {
     prevBtn.disabled = atFirst;
-    if (!atFirst) prevBtn.textContent = "← Prev";
+    if (!atFirst) prevBtn.textContent = "←";
   }
 
   if (nextBtn && !nextBtn.disabled) {
