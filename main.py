@@ -11,7 +11,7 @@
 # PyQt6's internal C++ threads do NOT use Python threading -- they are safe.
 # The COM worker MUST be a real OS thread, so we use eventlet.patcher.original
 # to get the un-patched threading and queue modules AFTER monkey_patch.
-
+  
 import eventlet
 eventlet.monkey_patch(os=False)  # MUST remain the first executable import
 

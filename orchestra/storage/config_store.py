@@ -7,6 +7,7 @@ which is determined once here and reused everywhere.
 from __future__ import annotations
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -22,8 +23,13 @@ from orchestra.constants import (
     SESSION_WARMUP_TIMEOUT_SECONDS,
 )
 
-# Project root = parent of the orchestra/ package directory
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# Project root = parent of the orchestra/ package directory.
+# When running as a PyInstaller bundle, user data lives next to the .exe
+# rather than inside the temporary _MEIPASS extraction directory.
+if getattr(sys, "frozen", False):
+    _PROJECT_ROOT = Path(sys.executable).parent
+else:
+    _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 _DEFAULT_CONFIG: Dict[str, Any] = {
     "schema_version": 1,
